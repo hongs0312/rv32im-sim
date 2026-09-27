@@ -1,6 +1,9 @@
 mod cache_line;
 
-use crate::hardware::{cpu::StageStatus, system_bus::SystemBus};
+use crate::hardware::soc::{
+    cpu::StageStatus,
+    system_bus::{BusOwner, SystemBus},
+};
 use cache_line::CacheLine;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -11,8 +14,8 @@ pub enum CacheState {
 }
 
 pub struct L1Cache {
-    lines: [CacheLine; 64],
-    state: CacheState,
+    pub lines: [CacheLine; 64],
+    pub state: CacheState,
 }
 
 impl L1Cache {
@@ -23,7 +26,7 @@ impl L1Cache {
         }
     }
 
-    pub fn read(&mut self, addr: u32, bus: &mut SystemBus) -> StageStatus<u32> {
+    pub fn read(&mut self, owner: BusOwner, addr: u32, bus: &mut SystemBus) -> StageStatus<u32> {
         let offset = (addr & 0xF) as usize;
         let index = ((addr >> 4) & 0x3F) as usize;
         let tag = addr >> 10;
@@ -46,7 +49,7 @@ impl L1Cache {
         if self.state == CacheState::WriteBack {
             let old_addr = (line.tag << 10) | ((index as u32) << 4);
 
-            match bus.write_block(old_addr, &line.data) {
+            match bus.write_block(owner, old_addr, &line.data) {
                 StageStatus::Busy => return StageStatus::Busy, // 버스가 바쁘면 캐시도 바쁨
                 StageStatus::Complete(_) => {
                     self.state = CacheState::Fetch; // 쓰기 완료 후 Fetch 단계로 전환
@@ -55,7 +58,7 @@ impl L1Cache {
         }
 
         if self.state == CacheState::Fetch {
-            match bus.read_block(addr) {
+            match bus.read_block(owner, addr) {
                 StageStatus::Busy => return StageStatus::Busy, // 버스가 바쁘면 캐시도 바쁨
                 StageStatus::Complete(new_block) => {
                     line.data = new_block;
@@ -78,6 +81,7 @@ impl L1Cache {
         value: u32,
         funct3: u8,
         bus: &mut SystemBus,
+        owner: BusOwner,
     ) -> StageStatus<u32> {
         let offset = (addr & 0xF) as usize;
         let index = ((addr >> 4) & 0x3F) as usize;
@@ -104,7 +108,7 @@ impl L1Cache {
         if self.state == CacheState::WriteBack {
             let old_addr = (line.tag << 10) | ((index as u32) << 4);
 
-            match bus.write_block(old_addr, &line.data) {
+            match bus.write_block(owner, old_addr, &line.data) {
                 StageStatus::Busy => return StageStatus::Busy, // 5사이클 기다림
                 StageStatus::Complete(()) => {
                     self.state = CacheState::Fetch; // 쫓아내기 완료! 이제 Fetch 단계로 넘어감
@@ -114,7 +118,7 @@ impl L1Cache {
 
         // 4. [Fetch 수행] 새 데이터를 DRAM에서 가져옴
         if self.state == CacheState::Fetch {
-            match bus.read_block(addr) {
+            match bus.read_block(owner, addr) {
                 StageStatus::Busy => return StageStatus::Busy, // 5사이클 기다림
                 StageStatus::Complete(new_block) => {
                     // 버스에서 데이터를 가져와서 라인 업데이트

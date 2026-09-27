@@ -4,7 +4,7 @@
     - EX 단계에서 load 명령어가 수행될 때, 다음 명령어가 load 명령어의 결과를 필요로 하는 경우, pipeline을 stall 시켜야 함
 */
 
-use crate::hardware::cpu::elements::decoder::*;
+use crate::hardware::soc::cpu::elements::decoder::*;
 
 pub struct HazardDetectionUnit;
 

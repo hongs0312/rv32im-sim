@@ -1,6 +1,6 @@
 use super::{ExMemRegister, MemWbRegister, StageStatus};
-use crate::hardware::cpu::Cpu;
-use crate::hardware::system_bus::SystemBus;
+use crate::hardware::soc::cpu::Cpu;
+use crate::hardware::soc::system_bus::{BusOwner, SystemBus};
 
 pub fn execute(
     cpu: &mut Cpu,
@@ -40,10 +40,14 @@ pub fn execute(
 
     // 3. 일반 메모리 접근 (D-Cache 사용)
     let cache_status = match control.mem_read {
-        true => cpu.d_cache.read(addr, bus),
-        false => cpu
-            .d_cache
-            .write(addr, ex_mem_reg.rs2_data, control.funct3, bus),
+        true => cpu.d_cache.read(BusOwner::DCache, addr, bus),
+        false => cpu.d_cache.write(
+            addr,
+            ex_mem_reg.rs2_data,
+            control.funct3,
+            bus,
+            BusOwner::DCache,
+        ),
     };
 
     match cache_status {

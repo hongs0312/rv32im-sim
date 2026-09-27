@@ -1,6 +1,5 @@
-use crate::hardware::cpu::Cpu;
-
 use super::MemWbRegister;
+use crate::hardware::soc::cpu::Cpu;
 
 pub fn execute(cpu: &mut Cpu, mem_wb_reg: MemWbRegister) {
     let (control, alu_result, mem_data, rd) = (

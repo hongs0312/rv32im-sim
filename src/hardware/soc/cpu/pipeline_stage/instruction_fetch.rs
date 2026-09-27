@@ -1,5 +1,5 @@
-use crate::hardware::cpu::Cpu;
-use crate::hardware::system_bus::SystemBus;
+use crate::hardware::soc::cpu::Cpu;
+use crate::hardware::soc::system_bus::{BusOwner, SystemBus};
 
 use super::{IfIdRegister, StageStatus};
 
@@ -20,7 +20,7 @@ pub fn execute(cpu: &mut Cpu, bus: &mut SystemBus, inject_nop: bool) -> StageSta
         );
     }
 
-    match cpu.i_cache.read(cur_pc, bus) {
+    match cpu.i_cache.read(BusOwner::ICache, cur_pc, bus) {
         StageStatus::Busy => StageStatus::Busy,
         StageStatus::Complete(instruction) => StageStatus::Complete(IfIdRegister {
             pc: cur_pc,

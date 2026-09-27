@@ -41,17 +41,17 @@ int main() {
     unsigned int start_time, end_time;
     unsigned int cpu_cycles, sys_cycles;
 
-    // MMIO 타이머로 정확한 CPU 연산 사이클 측정
-    start_time = HW_TIMER;
-    matmul_cpu(A, B, C_cpu);
-    end_time = HW_TIMER;
-    cpu_cycles = end_time - start_time;
-
     // 가속기 연산 사이클 측정
     start_time = HW_TIMER;
     matmul_systolic(A, B, C_sys);
     end_time = HW_TIMER;
     sys_cycles = end_time - start_time;
+
+    // MMIO 타이머로 정확한 CPU 연산 사이클 측정
+    start_time = HW_TIMER;
+    matmul_cpu(A, B, C_cpu);
+    end_time = HW_TIMER;
+    cpu_cycles = end_time - start_time;
 
     // 검증 로직
     unsigned int is_correct = 1;

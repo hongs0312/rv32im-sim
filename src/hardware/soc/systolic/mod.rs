@@ -1,9 +1,8 @@
 pub mod dma;
-pub mod linebuffer;
 pub mod processing_element;
 pub mod scratchpad;
 
-use crate::hardware::system_bus::SystemBus;
+use crate::hardware::soc::system_bus::SystemBus;
 
 use dma::{DmaState, SystolicDma};
 use processing_element::ProcessingElement;
@@ -11,6 +10,12 @@ use scratchpad::Scratchpad;
 
 pub const ARRAY_SIZE: usize = 16;
 pub const INNER_DIM: usize = 16;
+
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct StreamValue {
+    pub value: u32,
+    pub valid: bool,
+}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum SystolicState {
@@ -76,12 +81,9 @@ impl SystolicArray {
             SystolicState::Idle | SystolicState::Done => {}
 
             SystolicState::Loading => {
-                self.dma.step(bus);
+                self.dma.step(bus, &mut self.scratchpad);
 
                 if self.dma.state == DmaState::Done {
-                    self.scratchpad.load_a(self.dma.temp_a);
-                    self.scratchpad.load_b(self.dma.temp_b);
-
                     self.cycle = 0;
                     self.state = SystolicState::Computing;
                 }
@@ -91,23 +93,13 @@ impl SystolicArray {
                 for row in (0..ARRAY_SIZE).rev() {
                     for col in (0..ARRAY_SIZE).rev() {
                         let a_in = if col == 0 {
-                            let stream = self.scratchpad.a_input(row, self.cycle);
-
-                            match stream.valid {
-                                true => stream.value,
-                                false => 0,
-                            }
+                            self.scratchpad.a_input(row, self.cycle)
                         } else {
                             self.pes[row][col - 1].a_reg
                         };
 
                         let b_in = if row == 0 {
-                            let stream = self.scratchpad.b_input(col, self.cycle);
-
-                            match stream.valid {
-                                true => stream.value,
-                                false => 0,
-                            }
+                            self.scratchpad.b_input(col, self.cycle)
                         } else {
                             self.pes[row - 1][col].b_reg
                         };
@@ -127,7 +119,14 @@ impl SystolicArray {
 
             SystolicState::Storing => {
                 if let Some((row, col)) = self.dma.store_position() {
-                    self.dma.store_step(bus, self.pes[row][col].psum as u32);
+                    let temp_block = [
+                        self.pes[row][col].psum as u32,
+                        self.pes[row][col + 1].psum as u32,
+                        self.pes[row][col + 2].psum as u32,
+                        self.pes[row][col + 3].psum as u32,
+                    ];
+
+                    self.dma.store_step(bus, temp_block);
                 }
 
                 if self.dma.state == DmaState::Done {
@@ -142,14 +141,15 @@ impl SystolicArray {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hardware::memory::Dram;
-    use crate::hardware::system_bus::BusState;
+    use crate::hardware::soc::memory::Dram;
+    use crate::hardware::soc::system_bus::{BusOwner, BusState};
 
     #[test]
     fn test_systolic_array_mac() {
         // 1. Arrange: 메모리(Dram) 초기화 (예: 64KB 할당)
         let mut dram = Dram::new(64 * 1024);
         let mut bus_state = BusState::Ready;
+        let mut bus_owner = BusOwner::None;
 
         let addr_a = 0x1000;
         let addr_b = 0x2000;
@@ -178,9 +178,10 @@ mod tests {
         // 상태가 완료(2)가 될 때까지 사이클을 진행 (클럭 에뮬레이션)
         let mut total_cycles = 0;
         while systolic.status != 2 {
-            let mut system_bus = SystemBus::memory(bus_state, &mut dram);
+            let mut system_bus = SystemBus::memory(bus_state, bus_owner, &mut dram);
             systolic.step(&mut system_bus);
             bus_state = system_bus.state;
+            bus_owner = system_bus.owner;
             total_cycles += 1;
 
             // 무한 루프(Deadlock) 방지용 타임아웃
