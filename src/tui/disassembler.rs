@@ -76,3 +76,66 @@ pub fn disassemble(inst: u32) -> String {
         _ => format!("UNKNOWN (Opcode: 0x{:02X})", opcode),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_disassemble_special() {
+        assert_eq!(disassemble(0x00000013), "NOP");
+        assert_eq!(disassemble(0x00000000), "ILLEGAL");
+    }
+
+    #[test]
+    fn test_disassemble_r_type() {
+        // ADD x1, x2, x3 (opcode: 0x33, funct3: 0, funct7: 0, rd: 1, rs1: 2, rs2: 3)
+        assert_eq!(disassemble(0x003100B3), "ADD x1, x2, x3");
+    }
+
+    #[test]
+    fn test_disassemble_m_type() {
+        // MUL x4, x5, x6 (opcode: 0x33, funct3: 0, funct7: 1, rd: 4, rs1: 5, rs2: 6)
+        assert_eq!(disassemble(0x02628233), "MUL x4, x5, x6");
+    }
+
+    #[test]
+    fn test_disassemble_i_type() {
+        // ADDI x1, x2, -16 (opcode: 0x13, funct3: 0, rd: 1, rs1: 2, imm: -16)
+        assert_eq!(disassemble(0xFF010093), "ADDI x1, x2, -16");
+        
+        // SLLI x1, x2, 4 (opcode: 0x13, funct3: 1, rd: 1, rs1: 2, rs2/shamt: 4)
+        assert_eq!(disassemble(0x00411093), "SLLI x1, x2, 4");
+    }
+
+    #[test]
+    fn test_disassemble_load() {
+        // LW x7, 8(x8) (opcode: 0x03, funct3: 2, rd: 7, rs1: 8, imm: 8)
+        assert_eq!(disassemble(0x00842383), "LW x7, 8(x8)");
+    }
+
+    #[test]
+    fn test_disassemble_store() {
+        // SW x9, 16(x10) (opcode: 0x23, funct3: 2, rs1: 10, rs2: 9, imm: 16)
+        assert_eq!(disassemble(0x00952823), "SW x9, 16(x10)");
+    }
+
+    #[test]
+    fn test_disassemble_branch() {
+        // BEQ x0, x0, -4 (opcode: 0x63, funct3: 0, rs1: 0, rs2: 0, imm: -4)
+        // 무한 루프 도는 분기문 패턴
+        assert_eq!(disassemble(0xFE000EE3), "BEQ x0, x0, -4");
+    }
+
+    #[test]
+    fn test_disassemble_u_type() {
+        // LUI x5, 0x12345 (opcode: 0x37, rd: 5, imm: 0x12345000)
+        assert_eq!(disassemble(0x123452B7), "LUI x5, 0x12345");
+    }
+
+    #[test]
+    fn test_disassemble_j_type() {
+        // JAL x1, -4 (opcode: 0x6F, rd: 1, imm: -4)
+        assert_eq!(disassemble(0xFFDFF0EF), "JAL x1, -4");
+    }
+}
