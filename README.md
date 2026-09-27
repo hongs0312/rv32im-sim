@@ -50,6 +50,7 @@ Options
 | `-p`   | `--pipeline`  | Enable 5-stage pipelining execution                 | `false`        |
 | `-v`   | `--verbose`   | Enable cycle-by-cycle trace log (PC, Inst, sp, a0)  | `false`        |
 | `-m`   | `--max-steps` | Maximum instruction limit to prevent infinite loops | `100000`       |
+| `-t`   | `--tui`       | Launch the terminal-based interactive UI            | `false`        |
 
 ⚡ Systolic Array & Memory Wall
 
@@ -103,8 +104,9 @@ void matmul_systolic(unsigned int* A, unsigned int* B, unsigned int* C) {
 ```
 
 Running Screenshot
-
-<img src="images/running_systolic_array.png" alt="Running Systolic Array" width="800">
+<p align="center">
+  <img src="images/running_systolic_array.png" alt="Running Systolic Array" width="800">
+</p>
 
 📚 Reference
 
