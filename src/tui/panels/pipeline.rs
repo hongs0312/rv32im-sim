@@ -37,11 +37,18 @@ pub fn draw(f: &mut Frame, area: Rect, snapshot: &Snapshot) {
         ("WB", &snapshot.pipeline.wb, Color::Green),
     ];
 
-    for (i, (name, data, color)) in pipeline_data.iter().enumerate() {
+    for (i, (name, data, default_color)) in pipeline_data.iter().enumerate() {
         let stage_block = Block::default().title(*name).borders(Borders::ALL);
+
+        let color = if data.contains("BUBBLE") {
+            Color::DarkGray
+        } else {
+            *default_color
+        };
+
         let content = Paragraph::new(Line::from(format!("  {}", data)))
             .block(stage_block)
-            .style(Style::default().fg(*color).add_modifier(Modifier::BOLD));
+            .style(Style::default().fg(color).add_modifier(Modifier::BOLD));
         f.render_widget(content, stages[i]);
     }
 }

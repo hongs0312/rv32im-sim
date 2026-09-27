@@ -6,6 +6,8 @@ use crate::hardware::soc::systolic::dma::DmaState;
 
 use crate::hardware::soc::systolic::{ARRAY_SIZE, INNER_DIM};
 
+use super::disassembler::disassemble;
+
 #[derive(Debug, Clone)]
 pub struct Snapshot {
     pub cycle: u64,
@@ -42,7 +44,11 @@ impl From<&SoC> for Snapshot {
         let if_id_str = if soc.cpu.if_id_reg.instruction == 0x00000013 {
             "BUBBLE (NOP)".to_string()
         } else {
-            format!("PC: 0x{:08X}", soc.cpu.if_id_reg.pc)
+            format!(
+                "PC: 0x{:08X} | {}",
+                soc.cpu.if_id_reg.pc,
+                disassemble(soc.cpu.if_id_reg.instruction)
+            )
         };
 
         let id_ex_str =

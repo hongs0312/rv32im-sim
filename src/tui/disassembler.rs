@@ -69,6 +69,20 @@ pub fn disassemble(inst: u32) -> String {
             };
             format!("{} x{}, x{}, {}", op, rs1, rs2, imm as i32)
         }
+        0x73 => { // SYSTEM (ECALL, EBREAK, CSR)
+            let imm_12 = imm & 0xFFF; // I-Type 형태의 상위 12비트
+            match funct3 {
+                0 => {
+                    match imm_12 {
+                        0 => "ECALL".to_string(),
+                        1 => "EBREAK".to_string(),
+                        0x302 => "MRET".to_string(), // 특권 모드 복귀 명령어 (필요시)
+                        _ => format!("SYSTEM_PRIV (0x{:03X})", imm_12),
+                    }
+                }
+                _ => "UNKNOWN_SYSTEM".to_string(),
+            }
+        }
         0x6F => format!("JAL x{}, {}", rd, imm as i32),
         0x67 => format!("JALR x{}, x{}, {}", rd, rs1, imm as i32),
         0x37 => format!("LUI x{}, 0x{:05X}", rd, imm >> 12),
@@ -103,7 +117,7 @@ mod tests {
     fn test_disassemble_i_type() {
         // ADDI x1, x2, -16 (opcode: 0x13, funct3: 0, rd: 1, rs1: 2, imm: -16)
         assert_eq!(disassemble(0xFF010093), "ADDI x1, x2, -16");
-        
+
         // SLLI x1, x2, 4 (opcode: 0x13, funct3: 1, rd: 1, rs1: 2, rs2/shamt: 4)
         assert_eq!(disassemble(0x00411093), "SLLI x1, x2, 4");
     }
