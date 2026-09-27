@@ -1,8 +1,10 @@
+use crate::hardware::soc::SoC;
 use crate::hardware::soc::cpu::elements::cache::CacheState;
 use crate::hardware::soc::system_bus::{BusOwner, BusState};
-use crate::hardware::soc::systolic::dma::DmaState;
 use crate::hardware::soc::systolic::SystolicState;
-use crate::hardware::soc::SoC;
+use crate::hardware::soc::systolic::dma::DmaState;
+
+use crate::hardware::soc::systolic::{ARRAY_SIZE, INNER_DIM};
 
 #[derive(Debug, Clone)]
 pub struct Snapshot {
@@ -43,16 +45,15 @@ impl From<&SoC> for Snapshot {
             format!("PC: 0x{:08X}", soc.cpu.if_id_reg.pc)
         };
 
-        let id_ex_str = if soc.cpu.id_ex_reg.control.opcode == 0x13
-            && soc.cpu.id_ex_reg.control.funct3 == 0
-        {
-            "BUBBLE (NOP)".to_string()
-        } else {
-            format!(
-                "PC: 0x{:08X} | rd: x{}",
-                soc.cpu.id_ex_reg.pc, soc.cpu.id_ex_reg.rd
-            )
-        };
+        let id_ex_str =
+            if soc.cpu.id_ex_reg.control.opcode == 0x13 && soc.cpu.id_ex_reg.control.funct3 == 0 {
+                "BUBBLE (NOP)".to_string()
+            } else {
+                format!(
+                    "PC: 0x{:08X} | rd: x{}",
+                    soc.cpu.id_ex_reg.pc, soc.cpu.id_ex_reg.rd
+                )
+            };
 
         let ex_mem_str = format!(
             "ALU Res: 0x{:08X} | rd: x{}",
@@ -128,9 +129,17 @@ impl From<&SoC> for Snapshot {
             SystolicState::Loading => {
                 let words_loaded = match soc.systolic.dma.state {
                     DmaState::LatencyWait { is_a: true, .. } => 0,
-                    DmaState::Bursting { is_a: true, row, col } => row * 16 + col,
+                    DmaState::Bursting {
+                        is_a: true,
+                        row,
+                        col,
+                    } => row * 16 + col,
                     DmaState::LatencyWait { is_a: false, .. } => 256,
-                    DmaState::Bursting { is_a: false, row, col } => 256 + row * 16 + col,
+                    DmaState::Bursting {
+                        is_a: false,
+                        row,
+                        col,
+                    } => 256 + row * 16 + col,
                     DmaState::Done => 512,
                     _ => 0,
                 };
@@ -155,17 +164,19 @@ impl From<&SoC> for Snapshot {
         let systolic_progress = progress_f32.clamp(0.0, 100.0) as u16;
 
         // --- 6. Systolic Grids ---
-        let mut systolic_grid = Vec::with_capacity(16);
-        let mut sram_a_grid = Vec::with_capacity(16);
-        let mut sram_b_grid = Vec::with_capacity(16);
+        let mut systolic_grid = Vec::with_capacity(ARRAY_SIZE);
+        let mut sram_a_grid = Vec::with_capacity(ARRAY_SIZE);
+        let mut sram_b_grid = Vec::with_capacity(ARRAY_SIZE);
 
-        for i in 0..16 {
-            let mut pe_row = String::with_capacity(32);
-            let mut a_row = String::with_capacity(32);
-            let mut b_row = String::with_capacity(32);
+        for i in 0..ARRAY_SIZE {
+            let mut pe_row = String::with_capacity(INNER_DIM * 2);
+            let mut a_row = String::with_capacity(INNER_DIM * 2);
+            let mut b_row = String::with_capacity(INNER_DIM * 2);
 
-            for j in 0..16 {
-                if soc.systolic.pes[i][j].is_active {
+            for j in 0..INNER_DIM {
+                if soc.systolic.pes[i][j].is_active
+                    && soc.systolic.state == SystolicState::Computing
+                {
                     pe_row.push_str("■ ");
                 } else {
                     pe_row.push_str("□ ");
