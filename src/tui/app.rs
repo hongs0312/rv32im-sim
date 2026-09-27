@@ -7,7 +7,7 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{io, time::Duration};
 
 use super::render;
-use crate::hardware::soc::SoC;
+use crate::{hardware::soc::SoC, tui::snapshot::Snapshot};
 
 pub fn run_tui(mut soc: SoC) -> io::Result<()> {
     let original_hook = std::panic::take_hook();
@@ -28,7 +28,7 @@ pub fn run_tui(mut soc: SoC) -> io::Result<()> {
 
     loop {
         // 1. 현재 SoC 상태를 Snapshot으로 추출
-        let snapshot = soc.get_snapshot();
+        let snapshot = Snapshot::from(&soc);
 
         // 2. 화면 그리기
         terminal.draw(|f| render::draw(f, &snapshot))?;
