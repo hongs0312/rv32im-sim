@@ -18,6 +18,9 @@ struct Args {
 
     #[arg(short, long, default_value_t = 100000)]
     max_steps: usize,
+
+    #[arg(short, long, default_value_t = false)]
+    tui: bool,
 }
 
 fn compile_and_extract(c_path: &str) -> Vec<u32> {
@@ -143,7 +146,7 @@ fn run_single_cycle_simulation(mut soc: SoC, verbose: bool, max_steps: usize) {
     }
 }
 
-fn run_pipline_simulation(mut soc: SoC, verbose: bool, max_steps: usize) {
+fn run_pipeline_simulation(mut soc: SoC, verbose: bool, max_steps: usize) {
     println!("[3/3] 파이프라인 시뮬레이션 시작\n");
     println!("{:=^70}", " Simulation Running ");
 
@@ -158,15 +161,6 @@ fn run_pipline_simulation(mut soc: SoC, verbose: bool, max_steps: usize) {
         // 1. ecall이 파이프라인 끝자락에 도달했는지 먼저 검사!
         // WB 단계나 MEM 단계에 ecall이 있다면 정상 종료 절차를 밟음
         if soc.cpu.mem_wb_reg.control.is_ecall || soc.cpu.ex_mem_reg.control.is_ecall {
-            // let exit_code = cpu.regs.read(10); // a0 (x10)
-            // println!("\n{:=^70}", " Simulation Finished ");
-            // println!(
-            //     ">> Program exited gracefully with status code: {} (0x{:X})",
-            //     exit_code, exit_code
-            // );
-            // println!(">> Total executed cycles: {} cycles", cycle_count);
-            // break;
-
             let exit_code = soc.cpu.regs.read(10); // a0 (x10)
             let cpu_cycles = soc.cpu.regs.read(11); // a1 (x11) - CPU 연산 사이클
             let sys_cycles = soc.cpu.regs.read(12); // a2 (x12) - 가속기 연산 사이클
@@ -238,19 +232,25 @@ fn run_pipline_simulation(mut soc: SoC, verbose: bool, max_steps: usize) {
     }
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     if !Path::new(&args.source).exists() {
         eprintln!("오류: '{}' 파일을 찾을 수 없습니다.", args.source);
-        return;
+        return Ok(());
     }
 
     let program = compile_and_extract(&args.source);
-    let cpu = setup_cpu(&program);
+    let soc = setup_cpu(&program);
 
-    match args.pipeline {
-        true => run_pipline_simulation(cpu, args.verbose, args.max_steps),
-        false => run_single_cycle_simulation(cpu, args.verbose, args.max_steps),
+    if args.tui {
+        println!("[3/3] TUI 시뮬레이터 시작\n");
+        rv32i_sim::tui::app::run_tui(soc)?;
+    } else if args.pipeline {
+        run_pipeline_simulation(soc, args.verbose, args.max_steps);
+    } else {
+        run_single_cycle_simulation(soc, args.verbose, args.max_steps);
     }
+
+    Ok(())
 }

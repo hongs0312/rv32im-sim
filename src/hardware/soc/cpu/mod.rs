@@ -6,7 +6,7 @@
 pub mod elements;
 pub mod pipeline_stage;
 
-use crate::hardware::system_bus::SystemBus;
+use crate::hardware::soc::system_bus::SystemBus;
 use elements::{
     alu::Alu, cache::L1Cache, control::branch_controller::BranchController,
     hazard_detection_unit::HazardDetectionUnit, register::RegisterFile,
