@@ -5,10 +5,10 @@
     시스템 메모리로부터 Systolic Array(Scratchpad)로 데이터를 로드하는 모듈
 */
 
-use crate::hardware::soc::cpu::pipeline_stage::StageStatus;
-use crate::hardware::soc::system_bus::{BusOwner, SystemBus};
 use super::scratchpad::Scratchpad;
 use super::{ARRAY_SIZE, INNER_DIM};
+use crate::hardware::soc::cpu::pipeline_stage::StageStatus;
+use crate::hardware::soc::system_bus::{BusOwner, SystemBus};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum DmaState {
@@ -45,7 +45,10 @@ impl SystolicDma {
     pub fn start_load(&mut self, addr_a: u32, addr_b: u32) {
         self.addr_a = addr_a;
         self.addr_b = addr_b;
-        self.state = DmaState::LatencyWait { cycles_left: self.latency - 1, is_a: true };
+        self.state = DmaState::LatencyWait {
+            cycles_left: self.latency - 1,
+            is_a: true,
+        };
     }
 
     pub fn start_store(&mut self, addr_c: u32) {
@@ -84,7 +87,9 @@ impl SystolicDma {
     }
 
     pub fn store_step(&mut self, bus: &mut SystemBus, values: [u32; 4]) {
-        let DmaState::StoringC { row, col } = self.state else { return; };
+        let DmaState::StoringC { row, col } = self.state else {
+            return;
+        };
         let offset = (row * ARRAY_SIZE + col) * 4;
 
         // u32 배열을 16바이트 블록으로 직렬화 (루프로 간소화)
@@ -93,7 +98,10 @@ impl SystolicDma {
             block[i * 4..(i + 1) * 4].copy_from_slice(&val.to_le_bytes());
         }
 
-        if matches!(bus.write_block(BusOwner::SystolicDma, self.addr_c + offset as u32, &block), StageStatus::Complete(())) {
+        if matches!(
+            bus.write_block(BusOwner::SystolicDma, self.addr_c + offset as u32, &block),
+            StageStatus::Complete(())
+        ) {
             self.advance_store_state(row, col);
         }
     }
@@ -104,20 +112,39 @@ impl SystolicDma {
 
     fn handle_latency_wait(&mut self, cycles_left: u8, is_a: bool) {
         if cycles_left > 0 {
-            self.state = DmaState::LatencyWait { cycles_left: cycles_left - 1, is_a };
+            self.state = DmaState::LatencyWait {
+                cycles_left: cycles_left - 1,
+                is_a,
+            };
         } else {
-            self.state = DmaState::Bursting { is_a, row: 0, col: 0 };
+            self.state = DmaState::Bursting {
+                is_a,
+                row: 0,
+                col: 0,
+            };
         }
     }
 
     // --- 행렬 A 처리 ---
-    fn process_burst_a(&mut self, bus: &mut SystemBus, scratchpad: &mut Scratchpad, row: usize, col: usize) {
+    fn process_burst_a(
+        &mut self,
+        bus: &mut SystemBus,
+        scratchpad: &mut Scratchpad,
+        row: usize,
+        col: usize,
+    ) {
         let offset = (row * INNER_DIM + col) * 4;
-        
-        if let StageStatus::Complete(block) = bus.read_block(BusOwner::SystolicDma, self.addr_a + offset as u32) {
+
+        if let StageStatus::Complete(block) =
+            bus.read_block(BusOwner::SystolicDma, self.addr_a + offset as u32)
+        {
             // 16바이트를 4개의 Word로 분할하여 스크래치패드에 직배송
             for (index, bytes) in block.chunks_exact(4).enumerate() {
-                scratchpad.write_a(row, col + index, u32::from_le_bytes(bytes.try_into().unwrap()));
+                scratchpad.write_a(
+                    row,
+                    col + index,
+                    u32::from_le_bytes(bytes.try_into().unwrap()),
+                );
             }
             self.advance_burst_a_state(row, col);
         }
@@ -129,22 +156,45 @@ impl SystolicDma {
             let next_row = row + 1;
             if next_row >= ARRAY_SIZE {
                 // A 행렬을 다 읽으면 B 행렬 로드 시작
-                self.state = DmaState::LatencyWait { cycles_left: self.latency - 1, is_a: false };
+                self.state = DmaState::LatencyWait {
+                    cycles_left: self.latency - 1,
+                    is_a: false,
+                };
             } else {
-                self.state = DmaState::Bursting { is_a: true, row: next_row, col: 0 };
+                self.state = DmaState::Bursting {
+                    is_a: true,
+                    row: next_row,
+                    col: 0,
+                };
             }
         } else {
-            self.state = DmaState::Bursting { is_a: true, row, col: next_col };
+            self.state = DmaState::Bursting {
+                is_a: true,
+                row,
+                col: next_col,
+            };
         }
     }
 
     // --- 행렬 B 처리 ---
-    fn process_burst_b(&mut self, bus: &mut SystemBus, scratchpad: &mut Scratchpad, row: usize, col: usize) {
+    fn process_burst_b(
+        &mut self,
+        bus: &mut SystemBus,
+        scratchpad: &mut Scratchpad,
+        row: usize,
+        col: usize,
+    ) {
         let offset = (row * ARRAY_SIZE + col) * 4;
 
-        if let StageStatus::Complete(block) = bus.read_block(BusOwner::SystolicDma, self.addr_b + offset as u32) {
+        if let StageStatus::Complete(block) =
+            bus.read_block(BusOwner::SystolicDma, self.addr_b + offset as u32)
+        {
             for (index, bytes) in block.chunks_exact(4).enumerate() {
-                scratchpad.write_b(row, col + index, u32::from_le_bytes(bytes.try_into().unwrap()));
+                scratchpad.write_b(
+                    row,
+                    col + index,
+                    u32::from_le_bytes(bytes.try_into().unwrap()),
+                );
             }
             self.advance_burst_b_state(row, col);
         }
@@ -158,10 +208,18 @@ impl SystolicDma {
                 // B 행렬까지 다 읽으면 로딩 완료
                 self.state = DmaState::Done;
             } else {
-                self.state = DmaState::Bursting { is_a: false, row: next_row, col: 0 };
+                self.state = DmaState::Bursting {
+                    is_a: false,
+                    row: next_row,
+                    col: 0,
+                };
             }
         } else {
-            self.state = DmaState::Bursting { is_a: false, row, col: next_col };
+            self.state = DmaState::Bursting {
+                is_a: false,
+                row,
+                col: next_col,
+            };
         }
     }
 
@@ -173,7 +231,10 @@ impl SystolicDma {
             if next_row >= ARRAY_SIZE {
                 self.state = DmaState::Done;
             } else {
-                self.state = DmaState::StoringC { row: next_row, col: 0 };
+                self.state = DmaState::StoringC {
+                    row: next_row,
+                    col: 0,
+                };
             }
         } else {
             self.state = DmaState::StoringC { row, col: next_col };
