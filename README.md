@@ -1,5 +1,9 @@
 # RV32IM Cycle-Accurate SoC Simulator & Accelerator
 
+<p align="center">
+  <img src="images/tui_screenshot.png" alt="TUI Simulator Screenshot" width="700">
+</p>
+
 A lightweight yet highly precise **RISC-V (RV32IM) System-on-Chip (SoC) simulator** written in Rust.
 
 It automatically compiles C source files using the RISC-V GNU Toolchain, extracts raw binary code, loads it into a simulated 16MB DRAM, and executes instructions with cycle-by-cycle hardware state inspection. 
@@ -97,6 +101,10 @@ void matmul_systolic(unsigned int* A, unsigned int* B, unsigned int* C) {
     while (SYSTOLIC_STATUS != 2) {} 
 }
 ```
+
+Running Screenshot
+
+<img src="images/running_systolic_array.png" alt="Running Systolic Array" width="800">
 
 📚 Reference
 
