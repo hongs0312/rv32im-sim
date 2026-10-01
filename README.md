@@ -52,6 +52,49 @@ Options
 | `-m`   | `--max-steps` | Maximum instruction limit to prevent infinite loops | `100000`       |
 | `-t`   | `--tui`       | Launch the terminal-based interactive UI            | `false`        |
 
+## 🏗️ System Architecture
+
+```mermaid
+flowchart TB
+    subgraph Core_Layer ["RV32IM 5-Stage Core & L1 Caches"]
+        direction TB
+        subgraph Pipeline ["Pipeline Stages"]
+            direction LR
+            IF["IF"] --> ID["ID"] --> EX["EX"] --> MEM["MEM"] --> WB["WB"]
+        end
+        
+        subgraph Caches ["Cache Memory"]
+            direction LR
+            IC["I-Cache"] ~~~ DC["D-Cache"]
+        end
+        
+        IF <--> IC
+        MEM <--> DC
+        
+        Hazard(("Hazard &<br>Forwarding")) -.-> ID
+        Hazard -.-> EX
+    end
+
+    subgraph Interconnect_Layer ["System Interconnect"]
+        direction LR
+        Arbiter{"Bus Arbiter<br>(Ownership-based)"}
+    end
+
+    subgraph Accel_Layer ["Hardware Accelerator"]
+        direction LR
+        DMA[["DMA Controller<br>(16-byte Burst)"]] <--> SRAM[("Scratchpad<br>Local SRAM")]
+        SRAM <-->|"Wavefront Data"| SA[/"16x16 2D<br>Systolic Array"/]
+    end
+
+    MainMem[("Main Memory")]
+
+    %% 버스 연결
+    IC <--> Arbiter
+    DC <--> Arbiter
+    Arbiter <--> MainMem
+    Arbiter <-->|"DMA Request"| DMA
+```
+
 ⚡ Systolic Array & Memory Wall
 
 To accelerate matrix multiplications, this simulator includes a custom 16x16
