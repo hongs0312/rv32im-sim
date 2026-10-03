@@ -8,7 +8,7 @@
 
 // // 고유한 ALU 제어 신호 정의
 
-use crate::hardware::soc::cpu::StageStatus;
+use crate::hardware::soc::types::OpStatus;
 
 #[rustfmt::skip]
 enum AluControl {
@@ -189,7 +189,7 @@ impl Alu {
         alu_op: u8,
         funct3: u8,
         funct7: u8,
-    ) -> StageStatus<(u32, bool)> {
+    ) -> OpStatus<(u32, bool)> {
         let alu_control_signal = self.alu_control(alu_op, funct3, funct7);
         let latency = alu_control_signal.latency();
 
@@ -201,7 +201,7 @@ impl Alu {
                         lattched_a: a,
                         lattched_b: b,
                     };
-                    return StageStatus::Busy;
+                    return OpStatus::Busy;
                 }
             }
             MultiCycleState::Processing {
@@ -215,18 +215,18 @@ impl Alu {
                         lattched_a,
                         lattched_b,
                     };
-                    return StageStatus::Busy;
+                    return OpStatus::Busy;
                 } else {
                     self.state = MultiCycleState::Ready;
 
                     // 계속 바뀌는 a, b 대신 latched_a, latched_b를 사용하여 연산 수행
                     let alu_out = self.execute(lattched_a, lattched_b, alu_control_signal);
-                    return StageStatus::Complete((alu_out, alu_out == 0));
+                    return OpStatus::Complete((alu_out, alu_out == 0));
                 }
             }
         }
 
         let alu_out = self.execute(a, b, alu_control_signal);
-        StageStatus::Complete((alu_out, alu_out == 0))
+        OpStatus::Complete((alu_out, alu_out == 0))
     }
 }

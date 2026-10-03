@@ -7,12 +7,13 @@ pub mod elements;
 pub mod pipeline_stage;
 
 use crate::hardware::soc::system_bus::SystemBus;
+use crate::hardware::soc::types::OpStatus;
 use elements::{
     alu::Alu, cache::L1Cache, control::branch_controller::BranchController,
     hazard_detection_unit::HazardDetectionUnit, register::RegisterFile,
 };
 
-use pipeline_stage::{ExMemRegister, IdExRegister, IfIdRegister, MemWbRegister, StageStatus};
+use pipeline_stage::{ExMemRegister, IdExRegister, IfIdRegister, MemWbRegister};
 use pipeline_stage::{execute, instruction_decode, instruction_fetch, memory_access, write_back};
 
 pub struct Cpu {
@@ -51,23 +52,23 @@ impl Cpu {
         self.write_back(self.mem_wb_reg);
 
         let mem_status = self.memory_access(mem_bus, self.ex_mem_reg);
-        let is_mem_busy = matches!(mem_status, StageStatus::Busy);
+        let is_mem_busy = matches!(mem_status, OpStatus::Busy);
 
         let next_mem_wb_reg = match mem_status {
-            StageStatus::Complete(reg) => reg,
-            StageStatus::Busy => MemWbRegister::default(),
+            OpStatus::Complete(reg) => reg,
+            OpStatus::Busy => MemWbRegister::default(),
         };
 
         // 3. EX 단계 실행
         let ex_status = match is_mem_busy {
-            true => StageStatus::Busy,
+            true => OpStatus::Busy,
             false => self.execute(self.id_ex_reg, &next_mem_wb_reg),
         };
-        let is_ex_busy = matches!(ex_status, StageStatus::Busy);
+        let is_ex_busy = matches!(ex_status, OpStatus::Busy);
 
         // EX 단계 래치 결과 및 분기 판정 제어 신호 추출
         let (next_ex_mem_reg, pcsrc, branch_target) = match ex_status {
-            StageStatus::Complete(ex_reg) => {
+            OpStatus::Complete(ex_reg) => {
                 let branch_taken = ex_reg.control.branch
                     && BranchController::get_branch_condition(
                         ex_reg.alu_result,
@@ -79,7 +80,7 @@ impl Cpu {
 
                 (ex_reg, is_pcsrc, ex_reg.target_pc)
             }
-            StageStatus::Busy => (ExMemRegister::default(), false, 0),
+            OpStatus::Busy => (ExMemRegister::default(), false, 0),
         };
 
         // 4. 앞단 실행 (ID, IF)
@@ -92,11 +93,11 @@ impl Cpu {
         let next_id_ex_reg = self.instruction_decode(self.if_id_reg);
 
         let if_status = self.instruction_fetch(mem_bus, inject_nop);
-        let is_if_busy = matches!(if_status, StageStatus::Busy);
+        let is_if_busy = matches!(if_status, OpStatus::Busy);
 
         let next_if_id_reg = match if_status {
-            StageStatus::Complete(reg) => reg,
-            StageStatus::Busy => IfIdRegister::default(), // 스톨 시 NOP처럼 동작
+            OpStatus::Complete(reg) => reg,
+            OpStatus::Busy => IfIdRegister::default(), // 스톨 시 NOP처럼 동작
         };
 
         let stall_mem = is_mem_busy;
@@ -153,7 +154,7 @@ impl Cpu {
         &mut self,
         mem_bus: &mut SystemBus,
         inject_nop: bool,
-    ) -> StageStatus<IfIdRegister> {
+    ) -> OpStatus<IfIdRegister> {
         instruction_fetch::execute(self, mem_bus, inject_nop)
     }
 
@@ -165,7 +166,7 @@ impl Cpu {
         &mut self,
         id_ex_reg: IdExRegister,
         next_mem_wb_reg: &MemWbRegister,
-    ) -> StageStatus<ExMemRegister> {
+    ) -> OpStatus<ExMemRegister> {
         execute::execute(self, id_ex_reg, next_mem_wb_reg)
     }
 
@@ -173,7 +174,7 @@ impl Cpu {
         &mut self,
         mem_bus: &mut SystemBus,
         ex_mem_reg: ExMemRegister,
-    ) -> StageStatus<MemWbRegister> {
+    ) -> OpStatus<MemWbRegister> {
         memory_access::execute(self, mem_bus, ex_mem_reg)
     }
 

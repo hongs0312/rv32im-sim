@@ -142,13 +142,12 @@ impl SystolicArray {
 mod tests {
     use super::*;
     use crate::hardware::soc::memory::Dram;
-    use crate::hardware::soc::system_bus::{BusOwner, BusState};
+    use crate::hardware::soc::system_bus::BusOwner;
 
     #[test]
     fn test_systolic_array_mac() {
         // 1. Arrange: 메모리(Dram) 초기화 (예: 64KB 할당)
         let mut dram = Dram::new(64 * 1024);
-        let mut bus_state = BusState::Ready;
         let mut bus_owner = BusOwner::None;
 
         let addr_a = 0x1000;
@@ -178,9 +177,8 @@ mod tests {
         // 상태가 완료(2)가 될 때까지 사이클을 진행 (클럭 에뮬레이션)
         let mut total_cycles = 0;
         while systolic.status != 2 {
-            let mut system_bus = SystemBus::memory(bus_state, bus_owner, &mut dram);
+            let mut system_bus = SystemBus::memory(bus_owner, &mut dram);
             systolic.step(&mut system_bus);
-            bus_state = system_bus.state;
             bus_owner = system_bus.owner;
             total_cycles += 1;
 

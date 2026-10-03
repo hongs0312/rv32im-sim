@@ -1,8 +1,10 @@
 mod cache_line;
 
+const CACHE_LINE_COUNT: usize = 64;
+
 use crate::hardware::soc::{
-    cpu::StageStatus,
     system_bus::{BusOwner, SystemBus},
+    types::OpStatus,
 };
 use cache_line::CacheLine;
 
@@ -11,22 +13,58 @@ pub enum CacheState {
     Idle,
     WriteBack,
     Fetch,
+    Flushing { index: usize },
 }
 
 pub struct L1Cache {
-    pub lines: [CacheLine; 64],
+    pub lines: [CacheLine; CACHE_LINE_COUNT],
     pub state: CacheState,
 }
 
 impl L1Cache {
     pub fn new() -> Self {
         Self {
-            lines: [CacheLine::new(); 64],
+            lines: [CacheLine::new(); CACHE_LINE_COUNT],
             state: CacheState::Idle,
         }
     }
 
-    pub fn read(&mut self, owner: BusOwner, addr: u32, bus: &mut SystemBus) -> StageStatus<u32> {
+    pub fn handle_flush(&mut self, bus: &mut SystemBus, owner: BusOwner) -> OpStatus<u32> {
+        let mut current_index = match self.state {
+            CacheState::Idle => 0,
+            CacheState::Flushing { index } => index,
+            _ => return OpStatus::Busy,
+        };
+
+        while current_index < CACHE_LINE_COUNT {
+            let line = &self.lines[current_index];
+
+            if line.valid && line.dirty {
+                let old_addr = (line.tag << 10) | ((current_index as u32) << 4);
+
+                match bus.write_block(owner, old_addr, &line.data) {
+                    OpStatus::Busy => {
+                        self.state = CacheState::Flushing {
+                            index: current_index,
+                        };
+                        return OpStatus::Busy;
+                    }
+                    OpStatus::Complete(()) => {
+                        self.lines[current_index].dirty = false;
+                    }
+                }
+            }
+
+            self.lines[current_index].valid = false; // 무효화(Invalidate)
+            current_index += 1;
+        }
+
+        // 64개 라인 청소 완료!
+        self.state = CacheState::Idle;
+        OpStatus::Complete(0)
+    }
+
+    pub fn read(&mut self, owner: BusOwner, addr: u32, bus: &mut SystemBus) -> OpStatus<u32> {
         let offset = (addr & 0xF) as usize;
         let index = ((addr >> 4) & 0x3F) as usize;
         let tag = addr >> 10;
@@ -35,7 +73,7 @@ impl L1Cache {
 
         if line.valid && line.tag == tag {
             // [Hit] 1사이클 즉시 반환
-            return StageStatus::Complete(line.read32(offset));
+            return OpStatus::Complete(line.read32(offset));
         }
 
         if self.state == CacheState::Idle {
@@ -50,8 +88,8 @@ impl L1Cache {
             let old_addr = (line.tag << 10) | ((index as u32) << 4);
 
             match bus.write_block(owner, old_addr, &line.data) {
-                StageStatus::Busy => return StageStatus::Busy, // 버스가 바쁘면 캐시도 바쁨
-                StageStatus::Complete(_) => {
+                OpStatus::Busy => return OpStatus::Busy, // 버스가 바쁘면 캐시도 바쁨
+                OpStatus::Complete(_) => {
                     self.state = CacheState::Fetch; // 쓰기 완료 후 Fetch 단계로 전환
                 }
             }
@@ -59,20 +97,20 @@ impl L1Cache {
 
         if self.state == CacheState::Fetch {
             match bus.read_block(owner, addr) {
-                StageStatus::Busy => return StageStatus::Busy, // 버스가 바쁘면 캐시도 바쁨
-                StageStatus::Complete(new_block) => {
+                OpStatus::Busy => return OpStatus::Busy, // 버스가 바쁘면 캐시도 바쁨
+                OpStatus::Complete(new_block) => {
                     line.data = new_block;
                     line.valid = true;
                     line.tag = tag;
                     line.dirty = false;
 
                     self.state = CacheState::Idle; // Fetch 완료 후 Idle 상태로 전환
-                    return StageStatus::Complete(line.read32(offset));
+                    return OpStatus::Complete(line.read32(offset));
                 }
             }
         }
 
-        StageStatus::Busy // 아직 완료되지 않은 경우
+        OpStatus::Busy // 아직 완료되지 않은 경우
     }
 
     pub fn write(
@@ -82,7 +120,11 @@ impl L1Cache {
         funct3: u8,
         bus: &mut SystemBus,
         owner: BusOwner,
-    ) -> StageStatus<u32> {
+    ) -> OpStatus<u32> {
+        if addr == 0x8000_0030 {
+            return self.handle_flush(bus, owner);
+        }
+
         let offset = (addr & 0xF) as usize;
         let index = ((addr >> 4) & 0x3F) as usize;
         let tag = addr >> 10;
@@ -92,7 +134,7 @@ impl L1Cache {
         // 1. [Hit] 평시 상태(Idle)이면서 캐시가 히트된 경우
         if self.state == CacheState::Idle && line.valid && line.tag == tag {
             Self::write_to_line(line, offset, value, funct3);
-            return StageStatus::Complete(0);
+            return OpStatus::Complete(0);
         }
 
         // 2. [Miss 발생 시점] 현재 상태가 Idle이면 다음 행동을 결정
@@ -109,8 +151,8 @@ impl L1Cache {
             let old_addr = (line.tag << 10) | ((index as u32) << 4);
 
             match bus.write_block(owner, old_addr, &line.data) {
-                StageStatus::Busy => return StageStatus::Busy, // 5사이클 기다림
-                StageStatus::Complete(()) => {
+                OpStatus::Busy => return OpStatus::Busy, // 5사이클 기다림
+                OpStatus::Complete(()) => {
                     self.state = CacheState::Fetch; // 쫓아내기 완료! 이제 Fetch 단계로 넘어감
                 }
             }
@@ -119,8 +161,8 @@ impl L1Cache {
         // 4. [Fetch 수행] 새 데이터를 DRAM에서 가져옴
         if self.state == CacheState::Fetch {
             match bus.read_block(owner, addr) {
-                StageStatus::Busy => return StageStatus::Busy, // 5사이클 기다림
-                StageStatus::Complete(new_block) => {
+                OpStatus::Busy => return OpStatus::Busy, // 5사이클 기다림
+                OpStatus::Complete(new_block) => {
                     // 버스에서 데이터를 가져와서 라인 업데이트
                     line.data = new_block;
                     line.valid = true;
@@ -130,12 +172,12 @@ impl L1Cache {
                     Self::write_to_line(line, offset, value, funct3);
 
                     self.state = CacheState::Idle; // 상태 초기화
-                    return StageStatus::Complete(0);
+                    return OpStatus::Complete(0);
                 }
             }
         }
 
-        StageStatus::Busy
+        OpStatus::Busy
     }
 
     // 캐시 라인 안에 정확한 크기(8, 16, 32비트)만큼만 덮어쓰고 Dirty 비트를 켜는 헬퍼 메서드

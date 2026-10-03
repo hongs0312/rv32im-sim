@@ -1,12 +1,6 @@
-use crate::hardware::soc::cpu::pipeline_stage::StageStatus;
 use crate::hardware::soc::memory::Dram;
 use crate::hardware::soc::systolic::SystolicArray;
-
-#[derive(Clone, Copy, PartialEq)]
-pub enum BusState {
-    Ready,
-    Processing(u32), // 남은 대기 사이클
-}
+use crate::hardware::soc::types::OpStatus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BusOwner {
@@ -17,16 +11,14 @@ pub enum BusOwner {
 }
 
 pub struct SystemBus<'a> {
-    pub state: BusState,
     pub owner: BusOwner,
     pub dram: &'a mut Dram,
     pub systolic: Option<&'a mut SystolicArray>,
 }
 
 impl<'a> SystemBus<'a> {
-    pub fn memory(state: BusState, owner: BusOwner, dram: &'a mut Dram) -> Self {
+    pub fn memory(owner: BusOwner, dram: &'a mut Dram) -> Self {
         Self {
-            state,
             owner,
             dram,
             systolic: None,
@@ -34,110 +26,47 @@ impl<'a> SystemBus<'a> {
     }
 
     pub fn with_systolic(
-        state: BusState,
         owner: BusOwner,
         dram: &'a mut Dram,
         systolic: &'a mut SystolicArray,
     ) -> Self {
         Self {
-            state,
             owner,
             dram,
             systolic: Some(systolic),
         }
     }
 
-    pub fn read_block(&mut self, owner: BusOwner, addr: u32) -> StageStatus<[u8; 16]> {
+    pub fn read_block(&mut self, owner: BusOwner, addr: u32) -> OpStatus<[u8; 16]> {
+        // 1. 버스 소유권 중재 (Arbitration)
+        if self.owner != BusOwner::None && self.owner != owner {
+            return OpStatus::Busy; // 남이 버스를 쓰고 있으면 대기
+        }
+        self.owner = owner; // 버스 점유
+
+        // 2. Dram에 요청 전달 및 결과 반환
         let base_addr = (addr & !0xF) as usize;
-
-        match self.state {
-            BusState::Ready => {
-                self.owner = owner;
-                self.state = BusState::Processing(4); // 5사이클 중 첫 사이클 소모
-                StageStatus::Busy
-            }
-            BusState::Processing(cycles_left) => {
-                if self.owner != owner {
-                    return StageStatus::Busy;
-                }
-
-                if cycles_left > 1 {
-                    self.state = BusState::Processing(cycles_left - 1);
-                    StageStatus::Busy
-                } else {
-                    self.state = BusState::Ready;
-                    self.owner = BusOwner::None;
-
-                    let mut block = [0u8; 16];
-                    block.copy_from_slice(&self.dram.dram[base_addr..base_addr + 16]);
-                    StageStatus::Complete(block)
-                }
+        match self.dram.read_block(base_addr) {
+            OpStatus::Busy => OpStatus::Busy, // Dram이 바쁘면 나도 바쁨
+            OpStatus::Complete(data) => {
+                self.owner = BusOwner::None; // 작업이 끝났으니 버스 소유권 해제
+                OpStatus::Complete(data)
             }
         }
     }
 
-    pub fn write_block(&mut self, owner: BusOwner, addr: u32, block: &[u8; 16]) -> StageStatus<()> {
+    pub fn write_block(&mut self, owner: BusOwner, addr: u32, block: &[u8; 16]) -> OpStatus<()> {
+        if self.owner != BusOwner::None && self.owner != owner {
+            return OpStatus::Busy;
+        }
+        self.owner = owner;
+
         let base_addr = (addr & !0xF) as usize;
-
-        match self.state {
-            BusState::Ready => {
-                self.owner = owner;
-                self.state = BusState::Processing(4);
-                StageStatus::Busy
-            }
-            BusState::Processing(cycles_left) => {
-                if self.owner != owner {
-                    return StageStatus::Busy;
-                }
-
-                if cycles_left > 1 {
-                    self.state = BusState::Processing(cycles_left - 1);
-                    StageStatus::Busy
-                } else {
-                    self.state = BusState::Ready;
-                    self.owner = BusOwner::None;
-                    self.dram.dram[base_addr..base_addr + 16].copy_from_slice(block);
-                    StageStatus::Complete(())
-                }
-            }
-        }
-    }
-
-    pub fn read_word(&mut self, owner: BusOwner, addr: u32) -> StageStatus<u32> {
-        match self.read_block(owner, addr) {
-            StageStatus::Busy => StageStatus::Busy,
-            StageStatus::Complete(block) => {
-                let offset = (addr & 0xF) as usize;
-                StageStatus::Complete(u32::from_le_bytes(
-                    block[offset..offset + 4].try_into().unwrap(),
-                ))
-            }
-        }
-    }
-
-    pub fn write_word(&mut self, owner: BusOwner, addr: u32, value: u32) -> StageStatus<()> {
-        let address = addr as usize;
-
-        match self.state {
-            BusState::Ready => {
-                self.owner = owner;
-                self.state = BusState::Processing(4);
-                StageStatus::Busy
-            }
-            BusState::Processing(cycles_left) => {
-                if self.owner != owner {
-                    return StageStatus::Busy;
-                }
-
-                if cycles_left > 1 {
-                    self.state = BusState::Processing(cycles_left - 1);
-                    StageStatus::Busy
-                } else {
-                    self.state = BusState::Ready;
-                    self.owner = BusOwner::None;
-                    self.dram.dram[address..address + 4].copy_from_slice(&value.to_le_bytes());
-                    StageStatus::Complete(())
-                }
+        match self.dram.write_block(base_addr, block) {
+            OpStatus::Busy => OpStatus::Busy,
+            OpStatus::Complete(()) => {
+                self.owner = BusOwner::None;
+                OpStatus::Complete(())
             }
         }
     }
@@ -178,39 +107,35 @@ impl<'a> SystemBus<'a> {
     }
 
     pub fn reset(&mut self) {
-        self.state = BusState::Ready;
         self.owner = BusOwner::None;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BusOwner, BusState, SystemBus};
-    use crate::hardware::soc::cpu::pipeline_stage::StageStatus;
+    use super::{BusOwner, SystemBus};
     use crate::hardware::soc::memory::Dram;
+    use crate::hardware::soc::types::OpStatus;
 
     #[test]
     fn non_owner_cannot_advance_active_transaction() {
         let mut dram = Dram::new(64);
-        let mut bus = SystemBus::memory(BusState::Ready, BusOwner::None, &mut dram);
+        let mut bus = SystemBus::memory(BusOwner::None, &mut dram);
 
         assert!(matches!(
             bus.read_block(BusOwner::DCache, 0),
-            StageStatus::Busy
+            OpStatus::Busy
         ));
         assert_eq!(bus.owner, BusOwner::DCache);
-        assert!(matches!(bus.state, BusState::Processing(4)));
 
         assert!(matches!(
             bus.read_block(BusOwner::ICache, 0),
-            StageStatus::Busy
+            OpStatus::Busy
         ));
-        assert!(matches!(bus.state, BusState::Processing(4)));
 
         assert!(matches!(
             bus.read_block(BusOwner::DCache, 0),
-            StageStatus::Busy
+            OpStatus::Busy
         ));
-        assert!(matches!(bus.state, BusState::Processing(3)));
     }
 }

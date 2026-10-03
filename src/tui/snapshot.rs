@@ -1,6 +1,6 @@
 use crate::hardware::soc::SoC;
 use crate::hardware::soc::cpu::elements::cache::CacheState;
-use crate::hardware::soc::system_bus::{BusOwner, BusState};
+use crate::hardware::soc::system_bus::BusOwner;
 use crate::hardware::soc::systolic::SystolicState;
 use crate::hardware::soc::systolic::dma::DmaState;
 
@@ -19,7 +19,6 @@ pub struct Snapshot {
     pub i_cache_state: String,
     pub d_cache_state: String,
 
-    pub bus_state: String,
     pub bus_owner: String,
 
     pub systolic_state: String,
@@ -99,19 +98,17 @@ impl From<&SoC> for Snapshot {
             CacheState::Idle => "Idle".to_string(),
             CacheState::WriteBack => "WriteBack".to_string(),
             CacheState::Fetch => "Fetch".to_string(),
+            CacheState::Flushing { index } => format!("Flushing (index: {})", index),
         };
 
         let d_cache_state_str = match &soc.cpu.d_cache.state {
             CacheState::Idle => "Idle".to_string(),
             CacheState::WriteBack => "WriteBack".to_string(),
             CacheState::Fetch => "Fetch".to_string(),
+            CacheState::Flushing { index } => format!("Flushing (index: {})", index),
         };
 
         // --- 4. Bus State & Owner ---
-        let bus_state_str = match &soc.bus_state {
-            BusState::Ready => "Ready".to_string(),
-            BusState::Processing(cycles) => format!("Busy ({} cycles)", cycles),
-        };
 
         let bus_owner_str = match soc.bus_owner {
             BusOwner::None => "None",
@@ -212,7 +209,6 @@ impl From<&SoC> for Snapshot {
             registers,
             i_cache_state: i_cache_state_str,
             d_cache_state: d_cache_state_str,
-            bus_state: bus_state_str,
             bus_owner: bus_owner_str,
             systolic_state: systolic_state_str,
             systolic_progress,

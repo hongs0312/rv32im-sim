@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use rv32i_sim::hardware::soc::cpu::elements::{alu::Alu, decoder::*};
-    use rv32i_sim::hardware::soc::cpu::pipeline_stage::StageStatus;
+    use rv32i_sim::hardware::soc::types::OpStatus;
 
     #[test]
     fn alutest() {
@@ -13,7 +13,7 @@ mod tests {
         // Base Address + Offset 계산
         assert_eq!(
             alu.execute_with_cycles(0x1000, 4, 0b00, 0, 0),
-            StageStatus::Complete((0x1004, false))
+            OpStatus::Complete((0x1004, false))
         ); // 0x1000 + 4 = 0x1004
 
         // ==========================================
@@ -24,65 +24,65 @@ mod tests {
         // BEQ (Equal)
         assert_eq!(
             alu.execute_with_cycles(5, 5, 0b01, 0x0, 0),
-            StageStatus::Complete((0, true))
+            OpStatus::Complete((0, true))
         ); // 5 == 5 -> 참(1)
         assert_eq!(
             alu.execute_with_cycles(5, 3, 0b01, 0x0, 0),
-            StageStatus::Complete((2, false))
+            OpStatus::Complete((2, false))
         ); // 5 == 3 -> 거짓(0)
 
         // BNE (Not Equal)
         assert_eq!(
             alu.execute_with_cycles(5, 3, 0b01, 0x1, 0),
-            StageStatus::Complete((2, false))
+            OpStatus::Complete((2, false))
         ); // 5 != 3 -> 참(1)
         assert_eq!(
             alu.execute_with_cycles(5, 5, 0b01, 0x1, 0),
-            StageStatus::Complete((0, true))
+            OpStatus::Complete((0, true))
         ); // 5 != 5 -> 거짓(0)
 
         // BLT (Less Than - Signed)
         assert_eq!(
             alu.execute_with_cycles(0xFFFFFFFC, 10, 0b01, 0x4, 0),
-            StageStatus::Complete((1, false))
+            OpStatus::Complete((1, false))
         ); // -4 < 10 -> 참(1)
         assert_eq!(
             alu.execute_with_cycles(10, 0xFFFFFFFC, 0b01, 0x4, 0),
-            StageStatus::Complete((0, true))
+            OpStatus::Complete((0, true))
         ); // 10 < -4 -> 거짓(0)
 
         // // BGE (Greater Than or Equal - Signed)
         assert_eq!(
             alu.execute_with_cycles(10, 0xFFFFFFFC, 0b01, 0x5, 0),
-            StageStatus::Complete((0, true))
+            OpStatus::Complete((0, true))
         ); // 10 >= -4 -> 참(1)
         assert_eq!(
             alu.execute_with_cycles(5, 5, 0b01, 0x5, 0),
-            StageStatus::Complete((0, true))
+            OpStatus::Complete((0, true))
         ); // 5 >= 5 -> 참(1)
         assert_eq!(
             alu.execute_with_cycles(0xFFFFFFFC, 10, 0b01, 0x5, 0),
-            StageStatus::Complete((1, false))
+            OpStatus::Complete((1, false))
         ); // -4 >= 10 -> 거짓(0)
 
         // BLTU (Less Than - Unsigned)
         assert_eq!(
             alu.execute_with_cycles(10, 0xFFFFFFFC, 0b01, 0x6, 0),
-            StageStatus::Complete((1, false))
+            OpStatus::Complete((1, false))
         ); // 10 < 0xFFFFFFFC -> 참(1)
         assert_eq!(
             alu.execute_with_cycles(0xFFFFFFFC, 10, 0b01, 0x6, 0),
-            StageStatus::Complete((0, true))
+            OpStatus::Complete((0, true))
         ); // 0xFFFFFFFC < 10 -> 거짓(0)
 
         // BGEU (Greater Than or Equal - Unsigned)
         assert_eq!(
             alu.execute_with_cycles(0xFFFFFFFC, 10, 0b01, 0x7, 0),
-            StageStatus::Complete((0, true))
+            OpStatus::Complete((0, true))
         ); // 0xFFFFFFFC >= 10 -> 참(1)
         assert_eq!(
             alu.execute_with_cycles(10, 0xFFFFFFFC, 0b01, 0x7, 0),
-            StageStatus::Complete((1, false))
+            OpStatus::Complete((1, false))
         ); // 10 >= 0xFFFFFFFC -> 거짓(0)
 
         // ==========================================
@@ -91,65 +91,65 @@ mod tests {
         // Test ADD
         assert_eq!(
             alu.execute_with_cycles(10, 20, 0b10, 0x0, 0),
-            StageStatus::Complete((30, false))
+            OpStatus::Complete((30, false))
         ); // 10 + 20 = 30
 
         // Test SUB (funct7 30번째 비트 = 1 -> 1 << 5 = 0x20)
         assert_eq!(
             alu.execute_with_cycles(20, 10, 0b10, 0x0, 1 << 5),
-            StageStatus::Complete((10, false))
+            OpStatus::Complete((10, false))
         );
 
         // Test SLL (Shift Left Logical)
         assert_eq!(
             alu.execute_with_cycles(0b101, 2, 0b10, 0x1, 0),
-            StageStatus::Complete((20, false))
+            OpStatus::Complete((20, false))
         ); // 5 << 2 = 20
 
         // Test SLT (Set Less Than - Signed)
         assert_eq!(
             alu.execute_with_cycles(0xFFFFFFFC, 10, 0b10, 0x2, 0),
-            StageStatus::Complete((1, false))
+            OpStatus::Complete((1, false))
         ); // -4 < 10 -> 1
         assert_eq!(
             alu.execute_with_cycles(10, 0xFFFFFFFC, 0b10, 0x2, 0),
-            StageStatus::Complete((0, true))
+            OpStatus::Complete((0, true))
         ); // 10 < -4 -> 0
 
         // Test SLTU (Set Less Than - Unsigned)
         assert_eq!(
             alu.execute_with_cycles(10, 0xFFFFFFFC, 0b10, 0x3, 0),
-            StageStatus::Complete((1, false))
+            OpStatus::Complete((1, false))
         ); // 10 < 0xFFFFFFFC -> 1
 
         // Test XOR
         assert_eq!(
             alu.execute_with_cycles(0b1010, 0b1100, 0b10, 0x4, 0),
-            StageStatus::Complete((0b0110, false))
+            OpStatus::Complete((0b0110, false))
         ); // 10 ^ 12 = 6
 
         // Test SRL (Shift Right Logical)
         assert_eq!(
             alu.execute_with_cycles(0b1000, 2, 0b10, 0x5, 0),
-            StageStatus::Complete((2, false))
+            OpStatus::Complete((2, false))
         ); // 8 >> 2 = 2
 
         // Test SRA (Shift Right Arithmetic) // 현재 문제
         assert_eq!(
             alu.execute_with_cycles(0xFFFFFFFC, 1, 0b10, 0x5, 1 << 5),
-            StageStatus::Complete((0xFFFFFFFE, false))
+            OpStatus::Complete((0xFFFFFFFE, false))
         ); // -4 >> 1 = -1
 
         // Test OR
         assert_eq!(
             alu.execute_with_cycles(0b1010, 0b0101, 0b10, 0x6, 0),
-            StageStatus::Complete((0b1111, false))
+            OpStatus::Complete((0b1111, false))
         ); // 10 | 5 = 15
 
         // Test AND
         assert_eq!(
             alu.execute_with_cycles(0b1010, 0b1100, 0b10, 0x7, 0),
-            StageStatus::Complete((0b1000, false))
+            OpStatus::Complete((0b1000, false))
         ); // 10 & 12 = 8
 
         // ==========================================
@@ -158,61 +158,61 @@ mod tests {
         // Test ADDI (양수 즉시값)
         assert_eq!(
             alu.execute_with_cycles(10, 5, 0b11, 0x0, 0),
-            StageStatus::Complete((15, false))
+            OpStatus::Complete((15, false))
         ); // 10 + 5 = 15
 
         // Test ADDI (음수 즉시값: -4 / 0xFFFFFFFC)
         assert_eq!(
             alu.execute_with_cycles(10, 0xFFFFFFFC, 0b11, 0x0, 0),
-            StageStatus::Complete((6, false))
+            OpStatus::Complete((6, false))
         ); // 10 + (-4) = 6
 
         // Test SLLI
         assert_eq!(
             alu.execute_with_cycles(1, 3, 0b11, 0x1, 0),
-            StageStatus::Complete((8, false))
+            OpStatus::Complete((8, false))
         ); // 1 << 3 = 8
 
         // Test SLTI (Signed)
         assert_eq!(
             alu.execute_with_cycles(0xFFFFFFFC, 10, 0b11, 0x2, 0),
-            StageStatus::Complete((1, false))
+            OpStatus::Complete((1, false))
         ); // -4 < 10 -> 1
 
         // Test SLTIU (Unsigned)
         assert_eq!(
             alu.execute_with_cycles(0xFFFFFFFC, 10, 0b11, 0x3, 0),
-            StageStatus::Complete((0, true))
+            OpStatus::Complete((0, true))
         ); // 0xFFFFFFFC < 10 -> 0
 
         // Test XORI
         assert_eq!(
             alu.execute_with_cycles(0b1010, 0b0101, 0b11, 0x4, 0),
-            StageStatus::Complete((15, false))
+            OpStatus::Complete((15, false))
         ); // 10 ^ 5 = 15
 
         // Test SRLI
         assert_eq!(
             alu.execute_with_cycles(16, 2, 0b11, 0x5, 0),
-            StageStatus::Complete((4, false))
+            OpStatus::Complete((4, false))
         ); // 16 >> 2 = 4
 
         // Test SRAI
         assert_eq!(
             alu.execute_with_cycles(0xFFFFFFF0, 2, 0b11, 0x5, 1 << 5),
-            StageStatus::Complete((0xFFFFFFFC, false))
+            OpStatus::Complete((0xFFFFFFFC, false))
         ); // -16 >> 2 = -4
 
         // Test ORI
         assert_eq!(
             alu.execute_with_cycles(10, 5, 0b11, 0x6, 0),
-            StageStatus::Complete((15, false))
+            OpStatus::Complete((15, false))
         ); // 10 | 5 = 15
 
         // Test ANDI
         assert_eq!(
             alu.execute_with_cycles(10, 12, 0b11, 0x7, 0),
-            StageStatus::Complete((8, false))
+            OpStatus::Complete((8, false))
         ); // 10 & 12 = 8
 
         println!("All ALU tests passed successfully!");

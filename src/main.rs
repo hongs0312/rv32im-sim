@@ -160,7 +160,7 @@ fn run_pipeline_simulation(mut soc: SoC, verbose: bool, max_steps: usize) {
 
         // 1. ecall이 파이프라인 끝자락에 도달했는지 먼저 검사!
         // WB 단계나 MEM 단계에 ecall이 있다면 정상 종료 절차를 밟음
-        if soc.cpu.mem_wb_reg.control.is_ecall || soc.cpu.ex_mem_reg.control.is_ecall {
+        if soc.cpu.mem_wb_reg.control.is_ecall {
             let exit_code = soc.cpu.regs.read(10); // a0 (x10)
             let cpu_cycles = soc.cpu.regs.read(11); // a1 (x11) - CPU 연산 사이클
             let sys_cycles = soc.cpu.regs.read(12); // a2 (x12) - 가속기 연산 사이클

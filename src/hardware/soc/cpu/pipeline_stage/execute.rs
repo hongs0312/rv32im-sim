@@ -1,13 +1,14 @@
 use crate::hardware::soc::cpu::Cpu;
 use crate::hardware::soc::cpu::elements::forwarding_unit::{ForwardA, ForwardB, ForwardingUnit};
+use crate::hardware::soc::types::OpStatus;
 
-use super::{ExMemRegister, IdExRegister, MemWbRegister, StageStatus};
+use super::{ExMemRegister, IdExRegister, MemWbRegister};
 
 pub fn execute(
     cpu: &mut Cpu,
     id_ex_reg: IdExRegister,
     next_mem_wb_reg: &MemWbRegister,
-) -> StageStatus<ExMemRegister> {
+) -> OpStatus<ExMemRegister> {
     let (control, pc, rd, imm) = (id_ex_reg.control, id_ex_reg.pc, id_ex_reg.rd, id_ex_reg.imm);
     let (funct3, funct7) = (control.funct3, control.funct7);
 
@@ -21,7 +22,7 @@ pub fn execute(
         && !control.jump
         && !control.is_ecall
     {
-        return StageStatus::Complete(ExMemRegister::default());
+        return OpStatus::Complete(ExMemRegister::default());
     }
 
     let (forward_a, forward_b) =
@@ -65,8 +66,8 @@ pub fn execute(
         .execute_with_cycles(a, b, control.alu_op, funct3, funct7);
 
     let (raw_alu_result, zero) = match alu_status {
-        StageStatus::Busy => return StageStatus::Busy,
-        StageStatus::Complete(res) => res,
+        OpStatus::Busy => return OpStatus::Busy,
+        OpStatus::Complete(res) => res,
     };
 
     let target_pc = match control.is_jalr {
@@ -87,5 +88,5 @@ pub fn execute(
         rd,
         rs2_data: rs2_data_forwarded,
     };
-    StageStatus::Complete(result_reg)
+    OpStatus::Complete(result_reg)
 }

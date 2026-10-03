@@ -1,11 +1,12 @@
 use crate::hardware::soc::cpu::Cpu;
 use crate::hardware::soc::system_bus::{BusOwner, SystemBus};
+use crate::hardware::soc::types::OpStatus;
 
-use super::{IfIdRegister, StageStatus};
+use super::IfIdRegister;
 
-pub fn execute(cpu: &mut Cpu, bus: &mut SystemBus, inject_nop: bool) -> StageStatus<IfIdRegister> {
+pub fn execute(cpu: &mut Cpu, bus: &mut SystemBus, inject_nop: bool) -> OpStatus<IfIdRegister> {
     if inject_nop {
-        return StageStatus::Complete(IfIdRegister {
+        return OpStatus::Complete(IfIdRegister {
             pc: cpu.pc,
             instruction: 0x00000013,
         });
@@ -21,8 +22,8 @@ pub fn execute(cpu: &mut Cpu, bus: &mut SystemBus, inject_nop: bool) -> StageSta
     }
 
     match cpu.i_cache.read(BusOwner::ICache, cur_pc, bus) {
-        StageStatus::Busy => StageStatus::Busy,
-        StageStatus::Complete(instruction) => StageStatus::Complete(IfIdRegister {
+        OpStatus::Busy => OpStatus::Busy,
+        OpStatus::Complete(instruction) => OpStatus::Complete(IfIdRegister {
             pc: cur_pc,
             instruction,
         }),

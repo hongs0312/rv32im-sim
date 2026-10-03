@@ -1,18 +1,19 @@
-use super::{ExMemRegister, MemWbRegister, StageStatus};
+use super::{ExMemRegister, MemWbRegister};
 use crate::hardware::soc::cpu::Cpu;
 use crate::hardware::soc::system_bus::{BusOwner, SystemBus};
+use crate::hardware::soc::types::OpStatus;
 
 pub fn execute(
     cpu: &mut Cpu,
     bus: &mut SystemBus,
     ex_mem_reg: ExMemRegister,
-) -> StageStatus<MemWbRegister> {
-    let control = ex_mem_reg.control;
+) -> OpStatus<MemWbRegister> {
+    let control: crate::hardware::soc::cpu::elements::control::ControlSignals = ex_mem_reg.control;
     let addr = ex_mem_reg.alu_result;
 
     // 1. 메모리 접근이 없는 명령어 (ADD, SUB 등)
     if !control.mem_read && !control.mem_write {
-        return StageStatus::Complete(MemWbRegister {
+        return OpStatus::Complete(MemWbRegister {
             control,
             alu_result: addr,
             mem_data: 0,
@@ -22,15 +23,19 @@ pub fn execute(
 
     // 2. MMIO 라우팅 (캐시 우회)
     if addr >= 0x8000_0000 {
-        let mut mem_data = 0;
+        let mem_data = match (addr, control.mem_write) {
+            (0x8000_0030, true) => match cpu.d_cache.handle_flush(bus, BusOwner::DCache) {
+                OpStatus::Busy => return OpStatus::Busy,
+                OpStatus::Complete(_) => 0,
+            },
+            (_, true) => {
+                let _ = bus.write_mmio(addr, ex_mem_reg.rs2_data);
+                0
+            }
+            (_, false) => bus.read_mmio(addr),
+        };
 
-        if control.mem_write {
-            let _ = bus.write_mmio(addr, ex_mem_reg.rs2_data);
-        } else if control.mem_read {
-            mem_data = bus.read_mmio(addr);
-        }
-
-        return StageStatus::Complete(MemWbRegister {
+        return OpStatus::Complete(MemWbRegister {
             control,
             alu_result: addr,
             mem_data,
@@ -51,8 +56,8 @@ pub fn execute(
     };
 
     match cache_status {
-        StageStatus::Busy => StageStatus::Busy,
-        StageStatus::Complete(raw_mem_data) => {
+        OpStatus::Busy => OpStatus::Busy,
+        OpStatus::Complete(raw_mem_data) => {
             // Load 일 때만 데이터를 마스킹 처리 (Store일 때는 0 반환)
             let mem_data = if control.mem_read {
                 apply_funct3_mask(addr, raw_mem_data, control.funct3)
@@ -60,7 +65,7 @@ pub fn execute(
                 0
             };
 
-            StageStatus::Complete(MemWbRegister {
+            OpStatus::Complete(MemWbRegister {
                 control,
                 alu_result: addr,
                 mem_data,

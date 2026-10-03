@@ -7,8 +7,8 @@
 
 use super::scratchpad::Scratchpad;
 use super::{ARRAY_SIZE, INNER_DIM};
-use crate::hardware::soc::cpu::pipeline_stage::StageStatus;
 use crate::hardware::soc::system_bus::{BusOwner, SystemBus};
+use crate::hardware::soc::types::OpStatus;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum DmaState {
@@ -100,7 +100,7 @@ impl SystolicDma {
 
         if matches!(
             bus.write_block(BusOwner::SystolicDma, self.addr_c + offset as u32, &block),
-            StageStatus::Complete(())
+            OpStatus::Complete(())
         ) {
             self.advance_store_state(row, col);
         }
@@ -135,16 +135,19 @@ impl SystolicDma {
     ) {
         let offset = (row * INNER_DIM + col) * 4;
 
-        if let StageStatus::Complete(block) =
+        if let OpStatus::Complete(block) =
             bus.read_block(BusOwner::SystolicDma, self.addr_a + offset as u32)
         {
-            // 16바이트를 4개의 Word로 분할하여 스크래치패드에 직배송
             for (index, bytes) in block.chunks_exact(4).enumerate() {
-                scratchpad.write_a(
-                    row,
-                    col + index,
-                    u32::from_le_bytes(bytes.try_into().unwrap()),
-                );
+                let current_col = col + index;
+
+                if current_col < INNER_DIM {
+                    scratchpad.write_a(
+                        row,
+                        current_col,
+                        u32::from_le_bytes(bytes.try_into().unwrap()),
+                    );
+                }
             }
             self.advance_burst_a_state(row, col);
         }
@@ -186,20 +189,22 @@ impl SystolicDma {
     ) {
         let offset = (row * ARRAY_SIZE + col) * 4;
 
-        if let StageStatus::Complete(block) =
+        if let OpStatus::Complete(block) =
             bus.read_block(BusOwner::SystolicDma, self.addr_b + offset as u32)
         {
             for (index, bytes) in block.chunks_exact(4).enumerate() {
-                scratchpad.write_b(
-                    row,
-                    col + index,
-                    u32::from_le_bytes(bytes.try_into().unwrap()),
-                );
+                let current_col = col + index;
+                if current_col < ARRAY_SIZE {
+                    scratchpad.write_b(
+                        current_col, // Transposed Row
+                        row,         // Transposed Col
+                        u32::from_le_bytes(bytes.try_into().unwrap()),
+                    );
+                }
             }
             self.advance_burst_b_state(row, col);
         }
     }
-
     fn advance_burst_b_state(&mut self, row: usize, col: usize) {
         let next_col = col + 4;
         if next_col >= ARRAY_SIZE {

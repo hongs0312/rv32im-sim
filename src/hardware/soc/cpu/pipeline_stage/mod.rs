@@ -6,13 +6,6 @@ pub mod write_back;
 
 use super::elements::control::ControlSignals;
 
-// 파이프라인 단계의 상태를 표현하는 Enum
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum StageStatus<T> {
-    Busy,
-    Complete(T),
-}
-
 // pipline register structures
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct IfIdRegister {

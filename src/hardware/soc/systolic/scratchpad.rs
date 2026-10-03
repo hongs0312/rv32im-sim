@@ -46,7 +46,7 @@ impl Scratchpad {
             let col = cycle - row; // 현재 사이클에서 읽어야 할 열 인덱스
 
             if self.a_valid[row][col] {
-                self.a_valid[row][col] = false; // [핵심] PE로 방출되었으므로 스크래치패드에서 소모(비움) 처리!
+                self.a_valid[row][col] = false; // PE로 방출되었으므로 스크래치패드에서 소모(비움) 처리!
                 return StreamValue {
                     value: self.a_data[row][col],
                     valid: true,
@@ -64,10 +64,10 @@ impl Scratchpad {
         if cycle >= col && cycle < col + INNER_DIM {
             let row = cycle - col; // 현재 사이클에서 읽어야 할 행 인덱스
 
-            if self.b_valid[row][col] {
-                self.b_valid[row][col] = false; // [핵심] PE로 방출되었으므로 비움 처리!
+            if self.b_valid[col][row] {
+                self.b_valid[col][row] = false; // PE로 방출되었으므로 비움 처리!
                 return StreamValue {
-                    value: self.b_data[row][col],
+                    value: self.b_data[col][row],
                     valid: true,
                 };
             }
