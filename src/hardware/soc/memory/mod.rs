@@ -9,6 +9,8 @@ pub enum DramState {
     Writing { cycles_left: u8 },
 }
 
+pub mod bank;
+pub mod memory_contoller;
 pub struct Dram {
     pub dram: Vec<u8>,
     pub state: DramState,
