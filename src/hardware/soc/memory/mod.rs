@@ -1,107 +1,88 @@
 use crate::hardware::soc::types::OpStatus;
 
-const DRAN_LATENCY: u8 = 5; // DRAM의 지연 시간 (예: 5 사이클)
-
-#[derive(Clone, Copy, PartialEq)]
-pub enum DramState {
-    Idle,
-    Reading { cycles_left: u8 },
-    Writing { cycles_left: u8 },
-}
-
 pub mod bank;
-pub mod memory_contoller;
+
+use self::bank::{MemoryBank, ROW_SIZE};
+
+const NUM_BANKS: usize = 16;
+
 pub struct Dram {
-    pub dram: Vec<u8>,
-    pub state: DramState,
-    pub latency: u8,
+    pub banks: [MemoryBank; NUM_BANKS],
 }
 
 impl Dram {
-    pub fn new(size: usize) -> Self {
+    /// 전체 용량을 받아 16개의 뱅크로 균등 분할하여 생성
+    pub fn new(total_capacity: usize) -> Self {
+        // 16개의 뱅크가 각각 나누어 가질 용량 계산
+        let bank_capacity = total_capacity / NUM_BANKS;
+        let num_rows = bank_capacity / ROW_SIZE;
+
         Self {
-            dram: vec![0; size],
-            state: DramState::Idle,
-            latency: DRAN_LATENCY,
+            banks: core::array::from_fn(|_| MemoryBank::new(num_rows)),
         }
     }
 
-    pub fn read_block(&mut self, addr: usize) -> OpStatus<[u8; 16]> {
-        match self.state {
-            DramState::Idle => {
-                // 처음 요청이 들어오면 지연 상태로 진입
-                self.state = DramState::Reading {
-                    cycles_left: self.latency - 1,
-                };
-                OpStatus::Busy
-            }
-            DramState::Reading { cycles_left } => {
-                if cycles_left > 1 {
-                    // 아직 대기 중
-                    self.state = DramState::Reading {
-                        cycles_left: cycles_left - 1,
-                    };
-                    OpStatus::Busy
-                } else {
-                    // 대기 완료! 데이터 반환 및 Idle 복귀
-                    self.state = DramState::Idle;
-                    let mut block = [0u8; 16];
-                    block.copy_from_slice(&self.dram[addr..addr + 16]);
-                    OpStatus::Complete(block)
-                }
-            }
-            _ => OpStatus::Busy, // Write 중인데 Read가 들어온 경우 (충돌)
+    /// 16바이트 캐시 블록 읽기 요청을 디코딩하여 해당 뱅크로 라우팅합니다.
+    pub fn read_block(&mut self, addr: u32) -> OpStatus<[u8; 16]> {
+        let (bank_id, row, offset) = Self::decode_address(addr);
+
+        self.banks[bank_id].read_block(row, offset)
+    }
+
+    /// 16바이트 캐시 블록 쓰기 요청을 디코딩하여 해당 뱅크로 라우팅합니다.
+    pub fn write_block(&mut self, addr: u32, block: &[u8; 16]) -> OpStatus<()> {
+        let (bank_id, row, offset) = Self::decode_address(addr);
+
+        self.banks[bank_id].write_block(row, offset, block)
+    }
+
+    /// 32비트 물리 주소를 파싱하여 뱅크 인터리빙을 수행하는 주소 디코더
+    fn decode_address(addr: u32) -> (usize, usize, usize) {
+        // 1. 하위 4비트(16바이트 오프셋)를 버려 블록 단위 주소로 변환
+        let block_addr = (addr >> 4) as usize;
+
+        // 2. Fine-grained Interleaving: 블록 주소의 하위 4비트로 뱅크 ID(0~15) 결정
+        let bank_id = block_addr & 0xF;
+
+        // 3. 뱅크 내부 주소 계산
+        let bank_internal_index = block_addr >> 4;
+
+        // Row 하나는 1024바이트 (64블록)이므로 6비트 쉬프트
+        let row = bank_internal_index >> 6;
+        let offset = (bank_internal_index & 0x3F) * 16;
+
+        (bank_id, row, offset)
+    }
+
+    // --- (디버깅용) CPU 부팅 전 C 바이너리(ELF)를 메모리에 직접 적재할 때 사용하는 백도어 ---
+    // 시뮬레이터 초기화 단계에서만 사용되며, 타이밍 딜레이를 무시하고 뱅크에 직접 씁니다.
+    pub fn load_firmware(&mut self, addr: u32, data: &[u8]) {
+        for (i, &byte) in data.iter().enumerate() {
+            let target_addr = addr + i as u32;
+            let (bank_id, row, offset) = Self::decode_address(target_addr);
+
+            // 뱅크 내부의 1차원 배열에 직접 접근하여 바이트 단위로 쓰기
+            let base = row * ROW_SIZE + offset;
+
+            // 바이트 단위 오프셋 보정 (블록 오프셋 + 블록 내 바이트 오프셋)
+            let byte_offset = (target_addr & 0xF) as usize;
+            self.banks[bank_id].data[base + byte_offset] = byte;
         }
     }
 
-    pub fn write_block(&mut self, addr: usize, block: &[u8; 16]) -> OpStatus<()> {
-        match self.state {
-            DramState::Idle => {
-                self.state = DramState::Writing {
-                    cycles_left: self.latency - 1,
-                };
-                OpStatus::Busy
-            }
-            DramState::Writing { cycles_left } => {
-                if cycles_left > 1 {
-                    self.state = DramState::Writing {
-                        cycles_left: cycles_left - 1,
-                    };
-                    OpStatus::Busy
-                } else {
-                    self.state = DramState::Idle;
-                    self.dram[addr..addr + 16].copy_from_slice(block);
-                    OpStatus::Complete(())
-                }
-            }
-            _ => OpStatus::Busy,
-        }
+    pub fn load32(&self, addr: u32) -> u32 {
+        let b0 = self.debug_read_byte(addr);
+        let b1 = self.debug_read_byte(addr + 1);
+        let b2 = self.debug_read_byte(addr + 2);
+        let b3 = self.debug_read_byte(addr + 3);
+        u32::from_le_bytes([b0, b1, b2, b3])
     }
 
-    // 캐시구조 도입으로 인해 실제로는 사용하지 않는 메서드지만 디버깅을 위해 남겨둠
-    // Load methods
-    pub fn load8(&self, addr: usize) -> u8 {
-        u8::from_le_bytes([self.dram[addr]])
-    }
-    pub fn load16(&self, addr: usize) -> u16 {
-        let bytes = &self.dram[addr..addr + 2];
-        u16::from_le_bytes(bytes.try_into().expect("Slice with incorrect length"))
-    }
-    pub fn load32(&self, addr: usize) -> u32 {
-        let bytes = &self.dram[addr..addr + 4];
-        u32::from_le_bytes(bytes.try_into().expect("Slice with incorrect length"))
-    }
+    fn debug_read_byte(&self, addr: u32) -> u8 {
+        let (bank_id, row, offset) = Self::decode_address(addr);
+        let base = row * ROW_SIZE + offset;
+        let byte_offset = (addr & 0xF) as usize; // 블록 내의 바이트 위치
 
-    // Store methods
-    pub fn store8(&mut self, addr: usize, value: u8) {
-        self.dram[addr] = value;
-    }
-    pub fn store16(&mut self, addr: usize, value: u16) {
-        let bytes = value.to_le_bytes();
-        self.dram[addr..addr + 2].copy_from_slice(&bytes);
-    }
-    pub fn store32(&mut self, addr: usize, value: u32) {
-        let bytes = value.to_le_bytes();
-        self.dram[addr..addr + 4].copy_from_slice(&bytes);
+        self.banks[bank_id].data[base + byte_offset]
     }
 }

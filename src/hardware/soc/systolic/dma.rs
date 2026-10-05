@@ -13,7 +13,6 @@ use crate::hardware::soc::types::OpStatus;
 #[derive(Clone, Copy, PartialEq)]
 pub enum DmaState {
     Idle,
-    LatencyWait { cycles_left: u8, is_a: bool },
     Bursting { is_a: bool, row: usize, col: usize },
     StoringC { row: usize, col: usize },
     Done,
@@ -24,30 +23,26 @@ pub struct SystolicDma {
     pub addr_a: u32,
     pub addr_b: u32,
     pub addr_c: u32,
-    pub latency: u8,
 }
 
 impl SystolicDma {
-    pub fn new(latency: u8) -> Self {
+    pub fn new() -> Self {
         Self {
             state: DmaState::Idle,
             addr_a: 0,
             addr_b: 0,
             addr_c: 0,
-            latency,
         }
     }
-
-    // ==========================================
-    // Public API (제어 인터페이스)
-    // ==========================================
 
     pub fn start_load(&mut self, addr_a: u32, addr_b: u32) {
         self.addr_a = addr_a;
         self.addr_b = addr_b;
-        self.state = DmaState::LatencyWait {
-            cycles_left: self.latency - 1,
+
+        self.state = DmaState::Bursting {
             is_a: true,
+            row: 0,
+            col: 0,
         };
     }
 
@@ -64,17 +59,9 @@ impl SystolicDma {
         }
     }
 
-    // ==========================================
-    // 메인 루프 (Step)
-    // ==========================================
-
     pub fn step(&mut self, bus: &mut SystemBus, scratchpad: &mut Scratchpad) {
         match self.state {
             DmaState::Idle | DmaState::Done | DmaState::StoringC { .. } => {}
-
-            DmaState::LatencyWait { cycles_left, is_a } => {
-                self.handle_latency_wait(cycles_left, is_a);
-            }
 
             DmaState::Bursting { is_a, row, col } => {
                 if is_a {
@@ -106,25 +93,6 @@ impl SystolicDma {
         }
     }
 
-    // ==========================================
-    // Helper Functions (내부 상태 처리)
-    // ==========================================
-
-    fn handle_latency_wait(&mut self, cycles_left: u8, is_a: bool) {
-        if cycles_left > 0 {
-            self.state = DmaState::LatencyWait {
-                cycles_left: cycles_left - 1,
-                is_a,
-            };
-        } else {
-            self.state = DmaState::Bursting {
-                is_a,
-                row: 0,
-                col: 0,
-            };
-        }
-    }
-
     // --- 행렬 A 처리 ---
     fn process_burst_a(
         &mut self,
@@ -140,7 +108,6 @@ impl SystolicDma {
         {
             for (index, bytes) in block.chunks_exact(4).enumerate() {
                 let current_col = col + index;
-
                 if current_col < INNER_DIM {
                     scratchpad.write_a(
                         row,
@@ -158,10 +125,10 @@ impl SystolicDma {
         if next_col >= INNER_DIM {
             let next_row = row + 1;
             if next_row >= ARRAY_SIZE {
-                // A 행렬을 다 읽으면 B 행렬 로드 시작
-                self.state = DmaState::LatencyWait {
-                    cycles_left: self.latency - 1,
+                self.state = DmaState::Bursting {
                     is_a: false,
+                    row: 0,
+                    col: 0,
                 };
             } else {
                 self.state = DmaState::Bursting {
@@ -196,8 +163,8 @@ impl SystolicDma {
                 let current_col = col + index;
                 if current_col < ARRAY_SIZE {
                     scratchpad.write_b(
-                        current_col, // Transposed Row
-                        row,         // Transposed Col
+                        current_col,
+                        row,
                         u32::from_le_bytes(bytes.try_into().unwrap()),
                     );
                 }
@@ -210,7 +177,6 @@ impl SystolicDma {
         if next_col >= ARRAY_SIZE {
             let next_row = row + 1;
             if next_row >= INNER_DIM {
-                // B 행렬까지 다 읽으면 로딩 완료
                 self.state = DmaState::Done;
             } else {
                 self.state = DmaState::Bursting {

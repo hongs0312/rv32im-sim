@@ -131,13 +131,11 @@ impl From<&SoC> for Snapshot {
             SystolicState::Idle => 0.0,
             SystolicState::Loading => {
                 let words_loaded = match soc.systolic.dma.state {
-                    DmaState::LatencyWait { is_a: true, .. } => 0,
                     DmaState::Bursting {
                         is_a: true,
                         row,
                         col,
                     } => row * 16 + col,
-                    DmaState::LatencyWait { is_a: false, .. } => 256,
                     DmaState::Bursting {
                         is_a: false,
                         row,

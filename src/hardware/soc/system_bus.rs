@@ -45,7 +45,7 @@ impl<'a> SystemBus<'a> {
         self.owner = owner; // 버스 점유
 
         // 2. Dram에 요청 전달 및 결과 반환
-        let base_addr = (addr & !0xF) as usize;
+        let base_addr = addr & !0xF;
         match self.dram.read_block(base_addr) {
             OpStatus::Busy => OpStatus::Busy, // Dram이 바쁘면 나도 바쁨
             OpStatus::Complete(data) => {
@@ -61,7 +61,7 @@ impl<'a> SystemBus<'a> {
         }
         self.owner = owner;
 
-        let base_addr = (addr & !0xF) as usize;
+        let base_addr = addr & !0xF;
         match self.dram.write_block(base_addr, block) {
             OpStatus::Busy => OpStatus::Busy,
             OpStatus::Complete(()) => {

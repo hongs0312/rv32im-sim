@@ -77,11 +77,10 @@ fn setup_cpu(program: &[u32]) -> SoC {
 
     for (i, &inst) in program.iter().enumerate() {
         let bytes = inst.to_le_bytes();
-        let addr = i * 4;
-        soc.dram.dram[addr] = bytes[0];
-        soc.dram.dram[addr + 1] = bytes[1];
-        soc.dram.dram[addr + 2] = bytes[2];
-        soc.dram.dram[addr + 3] = bytes[3];
+        let addr = (i * 4) as u32;
+
+        // 💡 1차원 배열에 쓰는 대신, 디코딩이 내장된 펌웨어 적재 함수 사용!
+        soc.dram.load_firmware(addr, &bytes);
     }
 
     soc

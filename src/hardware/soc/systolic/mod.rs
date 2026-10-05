@@ -48,7 +48,7 @@ impl SystolicArray {
             addr_c: 0,
             state: SystolicState::Idle,
 
-            dma: SystolicDma::new(5),
+            dma: SystolicDma::new(),
             scratchpad: Scratchpad::new(),
             pes: [[INIT_PE; ARRAY_SIZE]; ARRAY_SIZE],
 
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_systolic_array_mac() {
-        // 1. Arrange: 메모리(Dram) 초기화 (예: 64KB 할당)
+        // 1. Arrange: 메모리 초기화
         let mut dram = Dram::new(64 * 1024);
         let mut bus_owner = BusOwner::None;
 
@@ -154,27 +154,28 @@ mod tests {
         let addr_b = 0x2000;
         let addr_c = 0x3000;
 
-        // 행렬 A 초기화 (모든 요소를 1로 세팅)
+        // 💡 행렬 A 초기화 (load_firmware 백도어 사용!)
         for row in 0..ARRAY_SIZE {
             for col in 0..INNER_DIM {
                 let offset = (row * INNER_DIM + col) * 4;
-                dram.store32(addr_a + offset, 1);
+                dram.load_firmware((addr_a + offset) as u32, &1u32.to_le_bytes());
             }
         }
 
-        // 행렬 B 초기화 (모든 요소를 1로 세팅)
+        // 💡 행렬 B 초기화
         for row in 0..INNER_DIM {
             for col in 0..ARRAY_SIZE {
                 let offset = (row * ARRAY_SIZE + col) * 4;
-                dram.store32(addr_b + offset, 1);
+                dram.load_firmware((addr_b + offset) as u32, &1u32.to_le_bytes());
             }
         }
 
         // 2. Act: 가속기 초기화 및 가동
         let mut systolic = SystolicArray::new();
+        // (참고: DMA 자체의 초기 latency 인자는 이제 필요 없으므로 new() 내부에서 제거됨)
         systolic.start(addr_a as u32, addr_b as u32, addr_c as u32);
 
-        // 상태가 완료(2)가 될 때까지 사이클을 진행 (클럭 에뮬레이션)
+        // 상태가 완료(2)가 될 때까지 사이클을 진행
         let mut total_cycles = 0;
         while systolic.status != 2 {
             let mut system_bus = SystemBus::memory(bus_owner, &mut dram);
@@ -182,20 +183,17 @@ mod tests {
             bus_owner = system_bus.owner;
             total_cycles += 1;
 
-            // 무한 루프(Deadlock) 방지용 타임아웃
-            // 각 DMA 워드가 시스템 버스 지연을 거치므로 직접 DRAM 접근보다 오래 걸립니다.
             assert!(
                 total_cycles < 10000,
                 "Simulation timed out! Pipeline stalled."
             );
         }
 
-        // 3. Assert: 결과 행렬 C 검증
-        // 1로 가득 찬 16x16 행렬 A와 B를 곱하면, C의 모든 요소는 INNER_DIM(16)이 되어야 합니다.
+        // 3. Assert: 결과 검증 (디버깅용 load32 백도어 사용 유지!)
         for row in 0..ARRAY_SIZE {
             for col in 0..ARRAY_SIZE {
                 let offset = (row * ARRAY_SIZE + col) * 4;
-                let result = dram.load32(addr_c + offset);
+                let result = dram.load32((addr_c + offset) as u32);
 
                 assert_eq!(
                     result, INNER_DIM as u32,
