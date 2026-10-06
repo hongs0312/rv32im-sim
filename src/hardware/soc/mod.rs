@@ -38,7 +38,12 @@ impl SoC {
     pub fn tick_with(&mut self, inject_nop: bool) {
         self.cycle += 1;
 
-        // 1. 가속기 DMA도 CPU와 같은 시스템 버스를 사용합니다.
+        self.dram.tick();
+
+        // 매 사이클마다 버스 소유권 초기화
+        self.bus_owner = BusOwner::None;
+
+        // 가속기 DMA도 CPU와 같은 시스템 버스를 사용합니다.
         let mut dma_bus = SystemBus::memory(self.bus_owner, &mut self.dram);
         self.systolic.step(&mut dma_bus);
         self.bus_owner = dma_bus.owner;
@@ -47,7 +52,7 @@ impl SoC {
         let mut sys_bus =
             SystemBus::with_systolic(self.bus_owner, &mut self.dram, &mut self.systolic);
 
-        // 2. CPU 실행 (CPU가 버스/메모리에 접근할 수 있도록 컨텍스트를 묶어서 전달)
+        // CPU 실행 (CPU가 버스/메모리에 접근할 수 있도록 컨텍스트를 묶어서 전달)
         // Rust의 Borrow Checker를 통과하기 위해 SoC의 필드들을 분리해서 참조로 넘깁니다.
         self.cpu.pipeline_step(&mut sys_bus, inject_nop);
         self.bus_owner = sys_bus.owner;

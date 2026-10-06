@@ -8,17 +8,22 @@ use crate::hardware::soc::{
 };
 use cache_line::CacheLine;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+// 버스가 비동기로 바뀌었으므로 상태도 Issue(요청)와 Wait(대기)로 분리
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CacheState {
     Idle,
-    WriteBack,
-    Fetch,
-    Flushing { index: usize },
+    WriteBackIssue,
+    WriteBackWait,
+    FetchIssue,
+    FetchWait,
+    FlushIssue { index: usize },
+    FlushWait { index: usize },
 }
 
 pub struct L1Cache {
     pub lines: [CacheLine; CACHE_LINE_COUNT],
     pub state: CacheState,
+    pub miss_addr: u32, // Miss 발생 시, 요청 주소를 기억
 }
 
 impl L1Cache {
@@ -26,174 +31,201 @@ impl L1Cache {
         Self {
             lines: [CacheLine::new(); CACHE_LINE_COUNT],
             state: CacheState::Idle,
+            miss_addr: 0,
         }
     }
 
     pub fn handle_flush(&mut self, bus: &mut SystemBus, owner: BusOwner) -> OpStatus<u32> {
-        let mut current_index = match self.state {
-            CacheState::Idle => 0,
-            CacheState::Flushing { index } => index,
-            _ => return OpStatus::Busy,
-        };
-
-        while current_index < CACHE_LINE_COUNT {
-            let line = &self.lines[current_index];
-
-            if line.valid && line.dirty {
-                let old_addr = (line.tag << 10) | ((current_index as u32) << 4);
-
-                match bus.write_block(owner, old_addr, &line.data) {
-                    OpStatus::Busy => {
-                        self.state = CacheState::Flushing {
-                            index: current_index,
-                        };
-                        return OpStatus::Busy;
-                    }
-                    OpStatus::Complete(()) => {
-                        self.lines[current_index].dirty = false;
-                    }
-                }
-            }
-
-            self.lines[current_index].valid = false; // 무효화(Invalidate)
-            current_index += 1;
+        if self.state == CacheState::Idle {
+            self.state = CacheState::FlushIssue { index: 0 };
         }
 
-        // 64개 라인 청소 완료!
-        self.state = CacheState::Idle;
-        OpStatus::Complete(0)
+        loop {
+            match self.state {
+                CacheState::FlushIssue { index } => {
+                    if index >= CACHE_LINE_COUNT {
+                        self.state = CacheState::Idle;
+                        return OpStatus::Complete(0); // 플러싱 완료!
+                    }
+
+                    let line = &self.lines[index];
+                    if line.valid && line.dirty {
+                        let old_addr = (line.tag << 10) | ((index as u32) << 4);
+
+                        // 1. 쓰기 시도
+                        match bus.issue_write(owner, old_addr, &line.data) {
+                            OpStatus::Busy => return OpStatus::Busy, // 버스 꽉 참, 다음 사이클에 재시도
+                            OpStatus::Complete(()) => {
+                                self.state = CacheState::FlushWait { index };
+                                return OpStatus::Busy;
+                            }
+                        }
+                    } else {
+                        self.lines[index].valid = false;
+                        self.state = CacheState::FlushIssue { index: index + 1 };
+                    }
+                }
+                CacheState::FlushWait { index } => {
+                    let line = &self.lines[index];
+                    let old_addr = (line.tag << 10) | ((index as u32) << 4);
+
+                    // 2. 완료 여부 확인
+                    match bus.collect_write(owner, old_addr) {
+                        OpStatus::Busy => return OpStatus::Busy, // 뱅크가 아직 기록 중
+                        OpStatus::Complete(()) => {
+                            self.lines[index].dirty = false;
+                            self.lines[index].valid = false; // 무효화
+
+                            // 이 라인 완료! 다음 라인으로 넘어가서 즉시 처리 시도
+                            self.state = CacheState::FlushIssue { index: index + 1 };
+                        }
+                    }
+                }
+                _ => return OpStatus::Busy,
+            }
+        }
     }
 
     pub fn read(&mut self, owner: BusOwner, addr: u32, bus: &mut SystemBus) -> OpStatus<u32> {
-        let offset = (addr & 0xF) as usize;
-        let index = ((addr >> 4) & 0x3F) as usize;
-        let tag = addr >> 10;
-
-        let line = &mut self.lines[index];
-
-        if line.valid && line.tag == tag {
-            // [Hit] 1사이클 즉시 반환
-            return OpStatus::Complete(line.read32(offset));
-        }
-
         if self.state == CacheState::Idle {
+            let offset = (addr & 0xF) as usize;
+            let index = ((addr >> 4) & 0x3F) as usize;
+            let tag = addr >> 10;
+            let line = &self.lines[index];
+
+            if line.valid && line.tag == tag {
+                return OpStatus::Complete(line.read32(offset));
+            }
+
+            self.miss_addr = addr;
             if line.valid && line.dirty {
-                self.state = CacheState::WriteBack;
+                self.state = CacheState::WriteBackIssue;
             } else {
-                self.state = CacheState::Fetch;
+                self.state = CacheState::FetchIssue;
             }
         }
 
-        if self.state == CacheState::WriteBack {
-            let old_addr = (line.tag << 10) | ((index as u32) << 4);
+        if let OpStatus::Complete(new_block) = self.handle_miss(owner, bus) {
+            let index = ((self.miss_addr >> 4) & 0x3F) as usize;
+            let tag = self.miss_addr >> 10;
+            let line = &mut self.lines[index];
 
-            match bus.write_block(owner, old_addr, &line.data) {
-                OpStatus::Busy => return OpStatus::Busy, // 버스가 바쁘면 캐시도 바쁨
-                OpStatus::Complete(_) => {
-                    self.state = CacheState::Fetch; // 쓰기 완료 후 Fetch 단계로 전환
-                }
+            line.data = new_block;
+            line.valid = true;
+            line.tag = tag;
+            line.dirty = false;
+
+            self.state = CacheState::Idle;
+
+            // 방금 가져온 데이터가 CPU가 '지금' 요구하는 주소인지 확인합니다.
+            // 분기 실패로 PC가 바뀌었다면, 기껏 가져왔어도 CPU에겐 Busy를 줘서 다음 사이클에 새 주소를 요구하게 만듭니다.
+            if self.miss_addr == addr {
+                let offset = (addr & 0xF) as usize;
+                OpStatus::Complete(line.read32(offset))
+            } else {
+                OpStatus::Busy
             }
+        } else {
+            OpStatus::Busy
         }
-
-        if self.state == CacheState::Fetch {
-            match bus.read_block(owner, addr) {
-                OpStatus::Busy => return OpStatus::Busy, // 버스가 바쁘면 캐시도 바쁨
-                OpStatus::Complete(new_block) => {
-                    line.data = new_block;
-                    line.valid = true;
-                    line.tag = tag;
-                    line.dirty = false;
-
-                    self.state = CacheState::Idle; // Fetch 완료 후 Idle 상태로 전환
-                    return OpStatus::Complete(line.read32(offset));
-                }
-            }
-        }
-
-        OpStatus::Busy // 아직 완료되지 않은 경우
     }
 
-    pub fn write(
-        &mut self,
-        addr: u32,
-        value: u32,
-        funct3: u8,
-        bus: &mut SystemBus,
-        owner: BusOwner,
-    ) -> OpStatus<u32> {
+    #[rustfmt::skip]
+    pub fn write(&mut self, addr: u32, value: u32, funct3: u8, bus: &mut SystemBus, owner: BusOwner) -> OpStatus<u32> {
         if addr == 0x8000_0030 {
             return self.handle_flush(bus, owner);
         }
 
-        let offset = (addr & 0xF) as usize;
-        let index = ((addr >> 4) & 0x3F) as usize;
-        let tag = addr >> 10;
-
-        let line = &mut self.lines[index];
-
-        // 1. [Hit] 평시 상태(Idle)이면서 캐시가 히트된 경우
-        if self.state == CacheState::Idle && line.valid && line.tag == tag {
-            Self::write_to_line(line, offset, value, funct3);
-            return OpStatus::Complete(0);
-        }
-
-        // 2. [Miss 발생 시점] 현재 상태가 Idle이면 다음 행동을 결정
         if self.state == CacheState::Idle {
+            let offset = (addr & 0xF) as usize;
+            let index = ((addr >> 4) & 0x3F) as usize;
+            let tag = addr >> 10;
+            let line = &self.lines[index];
+
+            if line.valid && line.tag == tag {
+                let line_mut = &mut self.lines[index];
+                Self::write_to_line(line_mut, offset, value, funct3);
+                return OpStatus::Complete(0);
+            }
+
+            self.miss_addr = addr;
             if line.valid && line.dirty {
-                self.state = CacheState::WriteBack; // 방 빼기 시작
+                self.state = CacheState::WriteBackIssue;
             } else {
-                self.state = CacheState::Fetch; // 뺄 방이 없으면 바로 새 짐 들이기
+                self.state = CacheState::FetchIssue;
             }
         }
 
-        // 3. [Eviction 수행] 기존 데이터를 DRAM으로 쫓아냄
-        if self.state == CacheState::WriteBack {
-            let old_addr = (line.tag << 10) | ((index as u32) << 4);
+        if let OpStatus::Complete(new_block) = self.handle_miss(owner, bus) {
+            let index = ((self.miss_addr >> 4) & 0x3F) as usize;
+            let tag = self.miss_addr >> 10;
+            let line = &mut self.lines[index];
 
-            match bus.write_block(owner, old_addr, &line.data) {
-                OpStatus::Busy => return OpStatus::Busy, // 5사이클 기다림
-                OpStatus::Complete(()) => {
-                    self.state = CacheState::Fetch; // 쫓아내기 완료! 이제 Fetch 단계로 넘어감
-                }
+            line.data = new_block;
+            line.valid = true;
+            line.tag = tag;
+
+            self.state = CacheState::Idle;
+
+            if self.miss_addr == addr {
+                let offset = (addr & 0xF) as usize;
+                Self::write_to_line(line, offset, value, funct3);
+                OpStatus::Complete(0)
+            } else {
+                OpStatus::Busy
             }
+        } else {
+            OpStatus::Busy
         }
-
-        // 4. [Fetch 수행] 새 데이터를 DRAM에서 가져옴
-        if self.state == CacheState::Fetch {
-            match bus.read_block(owner, addr) {
-                OpStatus::Busy => return OpStatus::Busy, // 5사이클 기다림
-                OpStatus::Complete(new_block) => {
-                    // 버스에서 데이터를 가져와서 라인 업데이트
-                    line.data = new_block;
-                    line.valid = true;
-                    line.tag = tag;
-
-                    // 캐시에 온전한 16바이트가 있으니 비로소 원하는 바이트만큼만 덮어쓰기
-                    Self::write_to_line(line, offset, value, funct3);
-
-                    self.state = CacheState::Idle; // 상태 초기화
-                    return OpStatus::Complete(0);
-                }
-            }
-        }
-
-        OpStatus::Busy
     }
 
-    // 캐시 라인 안에 정확한 크기(8, 16, 32비트)만큼만 덮어쓰고 Dirty 비트를 켜는 헬퍼 메서드
+    #[rustfmt::skip]
+    fn handle_miss(&mut self, owner: BusOwner, bus: &mut SystemBus) -> OpStatus<[u8; 16]> {
+        let index = ((self.miss_addr >> 4) & 0x3F) as usize;
+        let line = &self.lines[index];
+
+        match self.state {
+            CacheState::WriteBackIssue => {
+                let old_addr = (line.tag << 10) | ((index as u32) << 4);
+                if let OpStatus::Complete(()) = bus.issue_write(owner, old_addr, &line.data) {
+                    self.state = CacheState::WriteBackWait;
+                }
+                OpStatus::Busy
+            }
+            CacheState::WriteBackWait => {
+                let old_addr = (line.tag << 10) | ((index as u32) << 4);
+                if let OpStatus::Complete(()) = bus.collect_write(owner, old_addr) {
+                    self.state = CacheState::FetchIssue;
+                }
+                OpStatus::Busy
+            }
+            CacheState::FetchIssue => {
+                // 💡 CPU가 새 주소를 달라고 떼를 써도, 하던 일(miss_addr) 먼저 끝냅니다!
+                if let OpStatus::Complete(()) = bus.issue_read(owner, self.miss_addr) {
+                    self.state = CacheState::FetchWait;
+                }
+                OpStatus::Busy
+            }
+            CacheState::FetchWait => {
+                if let OpStatus::Complete(new_block) = bus.collect_read(owner, self.miss_addr) {
+                    OpStatus::Complete(new_block)
+                } else {
+                    OpStatus::Busy
+                }
+            }
+            _ => OpStatus::Busy,
+        }
+    }
+
     fn write_to_line(line: &mut CacheLine, offset: usize, value: u32, funct3: u8) {
         match funct3 {
-            0x0 => line.write8(offset, value as u8),   // sb (Store Byte)
-            0x1 => line.write16(offset, value as u16), // sh (Store Halfword)
-            0x2 => line.write32(offset, value),        // sw (Store Word)
+            0x0 => line.write8(offset, value as u8),
+            0x1 => line.write16(offset, value as u16),
+            0x2 => line.write32(offset, value),
             _ => panic!("지원하지 않는 Store funct3: {}", funct3),
         }
-        line.dirty = true; // 값이 변경되었으므로 반드시 Dirty 마킹!
+        line.dirty = true;
     }
 
-    pub fn reset(&mut self) {
-        if self.state == CacheState::Fetch {
-            self.state = CacheState::Idle;
-        }
-    }
+    pub fn reset(&mut self) {}
 }

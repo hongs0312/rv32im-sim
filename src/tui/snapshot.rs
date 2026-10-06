@@ -96,16 +96,22 @@ impl From<&SoC> for Snapshot {
         // --- 3. Caches ---
         let i_cache_state_str = match &soc.cpu.i_cache.state {
             CacheState::Idle => "Idle".to_string(),
-            CacheState::WriteBack => "WriteBack".to_string(),
-            CacheState::Fetch => "Fetch".to_string(),
-            CacheState::Flushing { index } => format!("Flushing (index: {})", index),
+            CacheState::WriteBackIssue => "WB Issue".to_string(),
+            CacheState::WriteBackWait => "WB Wait".to_string(),
+            CacheState::FetchIssue => "Fetch Issue".to_string(),
+            CacheState::FetchWait => "Fetch Wait".to_string(),
+            CacheState::FlushIssue { index } => format!("Flush Issue ({})", index),
+            CacheState::FlushWait { index } => format!("Flush Wait ({})", index),
         };
 
         let d_cache_state_str = match &soc.cpu.d_cache.state {
             CacheState::Idle => "Idle".to_string(),
-            CacheState::WriteBack => "WriteBack".to_string(),
-            CacheState::Fetch => "Fetch".to_string(),
-            CacheState::Flushing { index } => format!("Flushing (index: {})", index),
+            CacheState::WriteBackIssue => "WB Issue".to_string(),
+            CacheState::WriteBackWait => "WB Wait".to_string(),
+            CacheState::FetchIssue => "Fetch Issue".to_string(),
+            CacheState::FetchWait => "Fetch Wait".to_string(),
+            CacheState::FlushIssue { index } => format!("Flush Issue ({})", index),
+            CacheState::FlushWait { index } => format!("Flush Wait ({})", index),
         };
 
         // --- 4. Bus State & Owner ---
@@ -127,20 +133,14 @@ impl From<&SoC> for Snapshot {
             SystolicState::Done => "Done".to_string(),
         };
 
+        #[rustfmt::skip]
         let progress_f32 = match soc.systolic.state {
             SystolicState::Idle => 0.0,
             SystolicState::Loading => {
+                // 💡 Pipelined DMA 구조에 맞춰 collect(수거)된 데이터 개수로 진행도를 측정합니다.
                 let words_loaded = match soc.systolic.dma.state {
-                    DmaState::Bursting {
-                        is_a: true,
-                        row,
-                        col,
-                    } => row * 16 + col,
-                    DmaState::Bursting {
-                        is_a: false,
-                        row,
-                        col,
-                    } => 256 + row * 16 + col,
+                    DmaState::LoadingA { collect_r, collect_c, .. } => collect_r * 16 + collect_c,
+                    DmaState::LoadingB { collect_r, collect_c, .. } => 256 + collect_r * 16 + collect_c,
                     DmaState::Done => 512,
                     _ => 0,
                 };
@@ -153,7 +153,7 @@ impl From<&SoC> for Snapshot {
             }
             SystolicState::Storing => {
                 let words_stored = match soc.systolic.dma.state {
-                    DmaState::StoringC { row, col } => row * 16 + col,
+                    DmaState::Storing { collect_r, collect_c, .. } => collect_r * 16 + collect_c,
                     DmaState::Done => 256,
                     _ => 0,
                 };

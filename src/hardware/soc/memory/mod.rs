@@ -22,18 +22,34 @@ impl Dram {
         }
     }
 
-    /// 16바이트 캐시 블록 읽기 요청을 디코딩하여 해당 뱅크로 라우팅합니다.
-    pub fn read_block(&mut self, addr: u32) -> OpStatus<[u8; 16]> {
-        let (bank_id, row, offset) = Self::decode_address(addr);
-
-        self.banks[bank_id].read_block(row, offset)
+    pub fn tick(&mut self) {
+        for bank in &mut self.banks.iter_mut() {
+            bank.tick();
+        }
     }
 
-    /// 16바이트 캐시 블록 쓰기 요청을 디코딩하여 해당 뱅크로 라우팅합니다.
-    pub fn write_block(&mut self, addr: u32, block: &[u8; 16]) -> OpStatus<()> {
+    pub fn issue_read(&mut self, addr: u32) -> OpStatus<()> {
         let (bank_id, row, offset) = Self::decode_address(addr);
 
-        self.banks[bank_id].write_block(row, offset, block)
+        self.banks[bank_id].issue_read(row, offset)
+    }
+
+    pub fn collect_read(&mut self, addr: u32) -> OpStatus<[u8; 16]> {
+        let (bank_id, row, offset) = Self::decode_address(addr);
+
+        self.banks[bank_id].collect_read(row, offset)
+    }
+
+    pub fn issue_write(&mut self, addr: u32, block: &[u8; 16]) -> OpStatus<()> {
+        let (bank_id, row, offset) = Self::decode_address(addr);
+
+        self.banks[bank_id].issue_write(row, offset, block)
+    }
+
+    pub fn collect_write(&mut self, addr: u32) -> OpStatus<()> {
+        let (bank_id, row, offset) = Self::decode_address(addr);
+
+        self.banks[bank_id].collect_write(row, offset)
     }
 
     /// 32비트 물리 주소를 파싱하여 뱅크 인터리빙을 수행하는 주소 디코더
