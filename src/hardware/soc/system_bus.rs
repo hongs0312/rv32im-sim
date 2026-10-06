@@ -37,28 +37,7 @@ impl<'a> SystemBus<'a> {
         }
     }
 
-    // pub fn read_block(&mut self, owner: BusOwner, addr: u32) -> OpStatus<[u8; 16]> {
-    //     // 1. 버스 소유권 중재 (Arbitration)
-    //     if self.owner != BusOwner::None && self.owner != owner {
-    //         return OpStatus::Busy; // 남이 버스를 쓰고 있으면 대기
-    //     }
-    //     self.owner = owner; // 버스 점유
-
-    //     // 2. Dram에 요청 전달 및 결과 반환
-    //     let base_addr = addr & !0xF;
-    //     match self.dram.read_block(base_addr) {
-    //         OpStatus::Busy => OpStatus::Busy, // Dram이 바쁘면 나도 바쁨
-    //         OpStatus::Complete(data) => {
-    //             self.owner = BusOwner::None; // 작업이 끝났으니 버스 소유권 해제
-    //             OpStatus::Complete(data)
-    //         }
-    //     }
-    // }
-
     pub fn issue_read(&mut self, owner: BusOwner, addr: u32) -> OpStatus<()> {
-        // if self.owner != BusOwner::None && self.owner != owner {
-        //     return OpStatus::Busy;
-        // }
         self.owner = owner;
 
         let base_addr = addr & !0xF;
@@ -69,15 +48,9 @@ impl<'a> SystemBus<'a> {
                 OpStatus::Complete(())
             }
         }
-        // let status = self.dram.issue_read(base_addr);
-        // // println!("[BUS ISSUE] Owner: {:?}, Addr: 0x{:X}, Result: {:?}", owner, addr, status);
-        // status
     }
 
     pub fn collect_read(&mut self, owner: BusOwner, addr: u32) -> OpStatus<[u8; 16]> {
-        // if self.owner != BusOwner::None && self.owner != owner {
-        //     return OpStatus::Busy;
-        // }
         self.owner = owner;
 
         let base_addr = addr & !0xF;
@@ -90,26 +63,7 @@ impl<'a> SystemBus<'a> {
         }
     }
 
-    // pub fn write_block(&mut self, owner: BusOwner, addr: u32, block: &[u8; 16]) -> OpStatus<()> {
-    //     if self.owner != BusOwner::None && self.owner != owner {
-    //         return OpStatus::Busy;
-    //     }
-    //     self.owner = owner;
-
-    //     let base_addr = addr & !0xF;
-    //     match self.dram.write_block(base_addr, block) {
-    //         OpStatus::Busy => OpStatus::Busy,
-    //         OpStatus::Complete(()) => {
-    //             self.owner = BusOwner::None;
-    //             OpStatus::Complete(())
-    //         }
-    //     }
-    // }
-
     pub fn issue_write(&mut self, owner: BusOwner, addr: u32, block: &[u8; 16]) -> OpStatus<()> {
-        // if self.owner != BusOwner::None && self.owner != owner {
-        //     return OpStatus::Busy;
-        // }
         self.owner = owner;
 
         let base_addr = addr & !0xF;
@@ -123,9 +77,6 @@ impl<'a> SystemBus<'a> {
     }
 
     pub fn collect_write(&mut self, owner: BusOwner, addr: u32) -> OpStatus<()> {
-        // if self.owner != BusOwner::None && self.owner != owner {
-        //     return OpStatus::Busy;
-        // }
         self.owner = owner;
 
         let base_addr = addr & !0xF;

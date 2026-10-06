@@ -106,8 +106,6 @@ impl MemoryBank {
 
     #[rustfmt::skip]
     pub fn collect_read(&mut self, row: usize, offset: usize) -> OpStatus<[u8; 16]> {
-        // println!("[BANK COLLECT TRY] Target Row: {}, Offset: {}, Bank State: {:?}", row, offset, self.state);
-
         match self.state {
             // 지연 시간이 0이 되었고, 주소와 작업 종류가 일치할 때만 데이터 내어줌
             BankState::Accessing { cycles_left: 0, target_row, target_offset, is_write: false }
