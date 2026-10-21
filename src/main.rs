@@ -164,7 +164,7 @@ fn run_pipeline_simulation(mut soc: SoC, verbose: bool, max_steps: usize) {
         if soc.cpu.mem_wb_reg.control.is_ecall {
             let exit_code = soc.cpu.regs.read(10); // a0 (x10)
             let cpu_cycles = soc.cpu.regs.read(11); // a1 (x11) - CPU 연산 사이클
-            let sys_cycles = soc.cpu.regs.read(12); // a2 (x12) - 가속기 연산 사이클
+            let sys_cycles = soc.cpu.regs.read(12); // a2 (x12) - 가속기 연산 사이클  
 
             println!("\n{:=^70}", " Simulation Finished ");
             println!(
@@ -175,16 +175,13 @@ fn run_pipeline_simulation(mut soc: SoC, verbose: bool, max_steps: usize) {
                 ">> Total executed cycles (Simulator): {} cycles\n",
                 cycle_count
             );
-
-            println!("{:-^70}", " 벤치마크 결과 (16x16 행렬 곱셈) ");
-            println!(" - 순수 CPU (RV32IM) 소요 클럭  : {} cycles", cpu_cycles);
-            println!(" - 시스톨릭 어레이 가속 소요 클럭: {} cycles", sys_cycles);
+            println!();
+            println!("{:-^60}", " 벤치마크 결과 (16x16 행렬 곱셈) ");
+            println!(" - 순수 CPU (RV32IM) 소요 클럭\t\t: {} cycles", cpu_cycles);
+            println!(" - 시스톨릭 어레이 가속 소요 클럭\t: {} cycles", sys_cycles);
 
             if sys_cycles > 0 {
-                // 성능 향상 계산
-                let speedup = cpu_cycles / sys_cycles;
-
-                println!(" => 성능 향상(Speedup)         : 약 {} 배 빠름!", speedup);
+                println!(" => 성능 향상(Speedup)\t\t\t: 약 {:.2} 배 빠름!", cpu_cycles as f64 / sys_cycles as f64);
             }
             println!("{:-^70}", "");
 
