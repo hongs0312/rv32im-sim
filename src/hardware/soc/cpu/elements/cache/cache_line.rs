@@ -27,7 +27,8 @@ impl CacheLine {
 
     // 16바이트 블록에서 특정 오프셋에 32비트 데이터를 씀
     pub fn write32(&mut self, offset: usize, value: u32) {
-        let offset = (offset % 16) as usize;
+        // let offset = offset % 16 as usize;
+        let offset = offset % 16_usize;
         let size = 4; // Word 접근일 경우
 
         // 캐시 라인(16바이트) 경계를 넘어가는지 검사

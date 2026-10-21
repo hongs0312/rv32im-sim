@@ -21,7 +21,7 @@ impl Default for IfIdRegister {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct IdExRegister {
     pub control: ControlSignals,
 
@@ -36,20 +36,20 @@ pub struct IdExRegister {
 
     pub imm: i32,
 }
-impl Default for IdExRegister {
-    fn default() -> Self {
-        Self {
-            control: ControlSignals::default(),
-            pc: 0,
-            rd: 0,
-            rs1: 0,
-            rs2: 0,
-            rs1_data: 0,
-            rs2_data: 0,
-            imm: 0,
-        }
-    }
-}
+// impl Default for IdExRegister {
+//     fn default() -> Self {
+//         Self {
+//             control: ControlSignals::default(),
+//             pc: 0,
+//             rd: 0,
+//             rs1: 0,
+//             rs2: 0,
+//             rs1_data: 0,
+//             rs2_data: 0,
+//             imm: 0,
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct ExMemRegister {

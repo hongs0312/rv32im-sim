@@ -45,7 +45,7 @@ pub fn disassemble(inst: u32) -> String {
                 // 시프트 연산은 Immediate 대신 rs2 비트 위치(shamt)를 사용
                 format!("{} x{}, x{}, {}", op, rd, rs1, rs2)
             } else {
-                format!("{} x{}, x{}, {}", op, rd, rs1, imm as i32)
+                format!("{} x{}, x{}, {}", op, rd, rs1, { imm })
             }
         }
         0x03 => { // Load
@@ -53,21 +53,21 @@ pub fn disassemble(inst: u32) -> String {
                 0 => "LB", 1 => "LH", 2 => "LW", 4 => "LBU", 5 => "LHU",
                 _ => "UNKNOWN_L",
             };
-            format!("{} x{}, {}(x{})", op, rd, imm as i32, rs1)
+            format!("{} x{}, {}(x{})", op, rd, { imm }, rs1)
         }
         0x23 => { // Store
             let op = match funct3 {
                 0 => "SB", 1 => "SH", 2 => "SW",
                 _ => "UNKNOWN_S",
             };
-            format!("{} x{}, {}(x{})", op, rs2, imm as i32, rs1)
+            format!("{} x{}, {}(x{})", op, rs2, { imm }, rs1)
         }
         0x63 => { // Branch
             let op = match funct3 {
                 0 => "BEQ", 1 => "BNE", 4 => "BLT", 5 => "BGE", 6 => "BLTU", 7 => "BGEU",
                 _ => "UNKNOWN_B",
             };
-            format!("{} x{}, x{}, {}", op, rs1, rs2, imm as i32)
+            format!("{} x{}, x{}, {}", op, rs1, rs2, { imm })
         }
         0x73 => { // SYSTEM (ECALL, EBREAK, CSR)
             let imm_12 = imm & 0xFFF; // I-Type 형태의 상위 12비트
@@ -83,8 +83,8 @@ pub fn disassemble(inst: u32) -> String {
                 _ => "UNKNOWN_SYSTEM".to_string(),
             }
         }
-        0x6F => format!("JAL x{}, {}", rd, imm as i32),
-        0x67 => format!("JALR x{}, x{}, {}", rd, rs1, imm as i32),
+        0x6F => format!("JAL x{}, {}", rd, { imm }),
+        0x67 => format!("JALR x{}, x{}, {}", rd, rs1, { imm }),
         0x37 => format!("LUI x{}, 0x{:05X}", rd, imm >> 12),
         0x17 => format!("AUIPC x{}, 0x{:05X}", rd, imm >> 12),
         _ => format!("UNKNOWN (Opcode: 0x{:02X})", opcode),

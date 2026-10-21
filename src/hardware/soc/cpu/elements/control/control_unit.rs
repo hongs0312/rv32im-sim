@@ -4,11 +4,8 @@ pub struct ControlUnit;
 
 impl ControlUnit {
     pub fn decode(opcode: u8, funct3: u8, funct7: u8) -> ControlSignals {
-        let mut control = ControlSignals::default();
-
-        control.opcode = opcode;
-        control.funct3 = funct3;
-        control.funct7 = funct7;
+        // 기본값으로 ControlSignals를 초기화
+        let mut control = ControlSignals::new(opcode, funct3, funct7);
 
         match opcode {
             0x37 => {

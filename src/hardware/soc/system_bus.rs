@@ -103,7 +103,7 @@ impl<'a> SystemBus<'a> {
     }
 
     // MMIO 쓰기 (Systolic 가변 참조 필요)
-    pub fn write_mmio(&mut self, addr: u32, value: u32) -> Result<u32, ()> {
+    pub fn write_mmio(&mut self, addr: u32, value: u32) -> Result<u32, String> {
         let systolic = self
             .systolic
             .as_deref_mut()
@@ -119,7 +119,7 @@ impl<'a> SystemBus<'a> {
                     systolic.start(systolic.dma.addr_a, systolic.dma.addr_b, systolic.addr_c);
                 }
             }
-            _ => return Err(()),
+            _ => return Err(format!("Invalid MMIO write address: 0x{:08X}", addr)),
         }
         Ok(0)
     }

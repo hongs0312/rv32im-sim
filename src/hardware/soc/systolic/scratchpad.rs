@@ -84,3 +84,9 @@ impl Scratchpad {
         self.b_valid = [[false; ARRAY_SIZE]; INNER_DIM];
     }
 }
+
+impl Default for Scratchpad {
+    fn default() -> Self {
+        Self::new()
+    }
+}

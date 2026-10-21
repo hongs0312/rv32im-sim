@@ -75,6 +75,12 @@ impl Decoder {
     }
 }
 
+impl Default for Decoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[test]
 fn decoder_test() {
     let inst = 0b0000000_00001_00000_000_00000_0010011; // ADDI x0, x0, 1

@@ -2,19 +2,26 @@
     Systolic Array DMA State Machine
     (추후 System DMA로 격상하기 위해 Split-Transaction 완벽 지원)
 */
-
 use super::scratchpad::Scratchpad;
 use super::{ARRAY_SIZE, INNER_DIM};
 use crate::hardware::soc::system_bus::{BusOwner, SystemBus};
 use crate::hardware::soc::types::OpStatus;
 
+#[derive(Clone, Copy, Default, PartialEq)]
+pub struct DmaPointers {
+    pub issue_r: usize,
+    pub issue_c: usize,
+    pub collect_r: usize,
+    pub collect_c: usize,
+}
+
 #[rustfmt::skip]
 #[derive(Clone, Copy, PartialEq)]
 pub enum DmaState {
     Idle,
-    LoadingA { issue_r: usize, issue_c: usize, collect_r: usize, collect_c: usize },
-    LoadingB { issue_r: usize, issue_c: usize, collect_r: usize, collect_c: usize },
-    Storing { issue_r: usize, issue_c: usize, collect_r: usize, collect_c: usize },
+    LoadingA(DmaPointers),
+    LoadingB(DmaPointers),
+    Storing(DmaPointers),
     Done,
 }
 
@@ -38,29 +45,19 @@ impl SystolicDma {
     pub fn start_load(&mut self, addr_a: u32, addr_b: u32) {
         self.addr_a = addr_a;
         self.addr_b = addr_b;
-        self.state = DmaState::LoadingA {
-            issue_r: 0,
-            issue_c: 0,
-            collect_r: 0,
-            collect_c: 0,
-        };
+        self.state = DmaState::LoadingA(DmaPointers::default());
     }
 
     pub fn start_store(&mut self, addr_c: u32) {
         self.addr_c = addr_c;
-        self.state = DmaState::Storing {
-            issue_r: 0,
-            issue_c: 0,
-            collect_r: 0,
-            collect_c: 0,
-        };
+        self.state = DmaState::Storing(DmaPointers::default());
     }
 
     pub fn store_position(&self) -> Option<(usize, usize)> {
         // 💡 시스톨릭 어레이에게 "이번엔 이 주소에 쏠 데이터를 내놔라"고 발사 포인터를 알려줌
-        if let DmaState::Storing {
+        if let DmaState::Storing(DmaPointers {
             issue_r, issue_c, ..
-        } = self.state
+        }) = self.state
         {
             if issue_r < ARRAY_SIZE {
                 Some((issue_r, issue_c))
@@ -84,25 +81,11 @@ impl SystolicDma {
 
     pub fn step(&mut self, bus: &mut SystemBus, scratchpad: &mut Scratchpad) {
         match self.state {
-            DmaState::LoadingA {
-                issue_r,
-                issue_c,
-                collect_r,
-                collect_c,
-            } => {
-                self.process_pipeline(
-                    bus, scratchpad, true, issue_r, issue_c, collect_r, collect_c,
-                );
+            DmaState::LoadingA(dma_pointers) => {
+                self.process_pipeline(bus, scratchpad, true, dma_pointers);
             }
-            DmaState::LoadingB {
-                issue_r,
-                issue_c,
-                collect_r,
-                collect_c,
-            } => {
-                self.process_pipeline(
-                    bus, scratchpad, false, issue_r, issue_c, collect_r, collect_c,
-                );
+            DmaState::LoadingB(dma_pointers) => {
+                self.process_pipeline(bus, scratchpad, false, dma_pointers);
             }
             _ => {}
         }
@@ -113,10 +96,7 @@ impl SystolicDma {
         bus: &mut SystemBus,
         scratchpad: &mut Scratchpad,
         is_a: bool,
-        issue_r: usize,
-        issue_c: usize,
-        collect_r: usize,
-        collect_c: usize,
+        dma_pointers: DmaPointers,
     ) {
         // 행렬 A와 B에 따른 설정값 단일화
         let (boundary, end_row, base_addr) = if is_a {
@@ -125,6 +105,13 @@ impl SystolicDma {
             (ARRAY_SIZE, INNER_DIM, self.addr_b)
         };
 
+        let DmaPointers {
+            issue_r,
+            issue_c,
+            collect_r,
+            collect_c,
+        } = dma_pointers;
+
         let mut next_issue = (issue_r, issue_c);
         let mut next_collect = (collect_r, collect_c);
 
@@ -132,10 +119,10 @@ impl SystolicDma {
         if collect_r < end_row {
             let addr = base_addr + ((collect_r * boundary + collect_c) * 4) as u32;
             if let OpStatus::Complete(block) = bus.collect_read(BusOwner::SystolicDma, addr) {
-                for (index, bytes) in block.chunks_exact(4).enumerate() {
+                for (index, bytes) in block.as_chunks::<4>().0.iter().enumerate() {
                     let current_col = collect_c + index;
                     if current_col < boundary {
-                        let val = u32::from_le_bytes(bytes.try_into().unwrap());
+                        let val = u32::from_le_bytes(*bytes);
                         if is_a {
                             scratchpad.write_a(collect_r, current_col, val);
                         } else {
@@ -158,37 +145,32 @@ impl SystolicDma {
         // 3. 상태 전환 (헬퍼 함수 덕분에 재구축 로직이 매우 간결해짐)
         if next_collect.0 >= end_row {
             self.state = if is_a {
-                DmaState::LoadingB {
-                    issue_r: 0,
-                    issue_c: 0,
-                    collect_r: 0,
-                    collect_c: 0,
-                }
+                DmaState::LoadingB(DmaPointers::default())
             } else {
                 DmaState::Done
             };
         } else {
             self.state = if is_a {
-                DmaState::LoadingA {
+                DmaState::LoadingA(DmaPointers {
                     issue_r: next_issue.0,
                     issue_c: next_issue.1,
                     collect_r: next_collect.0,
                     collect_c: next_collect.1,
-                }
+                })
             } else {
-                DmaState::LoadingB {
+                DmaState::LoadingB(DmaPointers {
                     issue_r: next_issue.0,
                     issue_c: next_issue.1,
                     collect_r: next_collect.0,
                     collect_c: next_collect.1,
-                }
+                })
             };
         }
     }
 
     #[rustfmt::skip]
     pub fn store_step(&mut self, bus: &mut SystemBus, values: [u32; 4]) {
-        if let DmaState::Storing { mut issue_r, mut issue_c, mut collect_r, mut collect_c } = self.state {
+        if let DmaState::Storing(DmaPointers { mut issue_r, mut issue_c, mut collect_r, mut collect_c }) = self.state {
 
             // 1. [Data Channel] 이전에 쏜 쓰기 요청이 메모리 뱅크에서 끝났는지 확인 (추수)
             if collect_r < ARRAY_SIZE {
@@ -220,8 +202,14 @@ impl SystolicDma {
             if collect_r >= ARRAY_SIZE {
                 self.state = DmaState::Done;
             } else {
-                self.state = DmaState::Storing { issue_r, issue_c, collect_r, collect_c };
+                self.state = DmaState::Storing(DmaPointers { issue_r, issue_c, collect_r, collect_c });
             }
         }
+    }
+}
+
+impl Default for SystolicDma {
+    fn default() -> Self {
+        Self::new()
     }
 }

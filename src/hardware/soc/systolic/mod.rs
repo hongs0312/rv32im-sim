@@ -138,6 +138,12 @@ impl SystolicArray {
     }
 }
 
+impl Default for SystolicArray {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

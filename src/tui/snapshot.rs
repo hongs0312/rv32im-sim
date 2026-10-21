@@ -2,7 +2,7 @@ use crate::hardware::soc::SoC;
 use crate::hardware::soc::cpu::elements::cache::CacheState;
 use crate::hardware::soc::system_bus::BusOwner;
 use crate::hardware::soc::systolic::SystolicState;
-use crate::hardware::soc::systolic::dma::DmaState;
+use crate::hardware::soc::systolic::dma::{DmaPointers, DmaState};
 
 use crate::hardware::soc::systolic::{ARRAY_SIZE, INNER_DIM};
 
@@ -89,8 +89,8 @@ impl From<&SoC> for Snapshot {
 
         // --- 2. Register File ---
         let mut registers = [0; 32];
-        for i in 0..32 {
-            registers[i] = soc.cpu.regs.read(i as u8);
+        for (i, reg) in registers.iter_mut().enumerate() {
+            *reg = soc.cpu.regs.read(i as u8);
         }
 
         // --- 3. Caches ---
@@ -139,8 +139,8 @@ impl From<&SoC> for Snapshot {
             SystolicState::Loading => {
                 // 💡 Pipelined DMA 구조에 맞춰 collect(수거)된 데이터 개수로 진행도를 측정합니다.
                 let words_loaded = match soc.systolic.dma.state {
-                    DmaState::LoadingA { collect_r, collect_c, .. } => collect_r * 16 + collect_c,
-                    DmaState::LoadingB { collect_r, collect_c, .. } => 256 + collect_r * 16 + collect_c,
+                    DmaState::LoadingA (DmaPointers { issue_r: _, issue_c: _, collect_r, collect_c }) => collect_r * 16 + collect_c,
+                    DmaState::LoadingB (DmaPointers { issue_r: _, issue_c: _, collect_r, collect_c }) => 256 + collect_r * 16 + collect_c,
                     DmaState::Done => 512,
                     _ => 0,
                 };
@@ -153,7 +153,7 @@ impl From<&SoC> for Snapshot {
             }
             SystolicState::Storing => {
                 let words_stored = match soc.systolic.dma.state {
-                    DmaState::Storing { collect_r, collect_c, .. } => collect_r * 16 + collect_c,
+                    DmaState::Storing(DmaPointers { issue_r: _, issue_c: _, collect_r, collect_c }) => collect_r * 16 + collect_c,
                     DmaState::Done => 256,
                     _ => 0,
                 };

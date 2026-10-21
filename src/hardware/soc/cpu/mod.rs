@@ -182,3 +182,9 @@ impl Cpu {
         write_back::execute(self, mem_wb_reg)
     }
 }
+
+impl Default for Cpu {
+    fn default() -> Self {
+        Self::new()
+    }
+}

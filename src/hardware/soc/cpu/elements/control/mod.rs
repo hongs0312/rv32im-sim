@@ -28,6 +28,18 @@ pub struct ControlSignals {
     // System
     pub is_ecall: bool,
 }
+impl ControlSignals {
+    pub fn new(opcode: u8, funct3: u8, funct7: u8) -> Self {
+        Self {
+            opcode,
+            funct3,
+            funct7,
+
+            ..Default::default() // 나머지 필드는 기본값으로 초기화
+        }
+    }
+}
+
 impl Default for ControlSignals {
     fn default() -> Self {
         Self {

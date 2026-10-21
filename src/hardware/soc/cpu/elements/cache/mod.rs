@@ -229,3 +229,9 @@ impl L1Cache {
 
     pub fn reset(&mut self) {}
 }
+
+impl Default for L1Cache {
+    fn default() -> Self {
+        Self::new()
+    }
+}

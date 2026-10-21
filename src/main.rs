@@ -66,8 +66,10 @@ fn compile_and_extract(c_path: &str) -> Vec<u32> {
 
     // u8 바이트 배열을 u32 명령어 배열로 변환
     binary_bytes
-        .chunks_exact(4)
-        .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|chunk| u32::from_le_bytes(*chunk))
         .collect()
 }
 
@@ -179,10 +181,10 @@ fn run_pipeline_simulation(mut soc: SoC, verbose: bool, max_steps: usize) {
             println!(" - 시스톨릭 어레이 가속 소요 클럭: {} cycles", sys_cycles);
 
             if sys_cycles > 0 {
-                println!(
-                    " => 성능 향상(Speedup)         : 약 {} 배 빠름!",
-                    cpu_cycles / sys_cycles
-                );
+                // 성능 향상 계산
+                let speedup = cpu_cycles / sys_cycles;
+
+                println!(" => 성능 향상(Speedup)         : 약 {} 배 빠름!", speedup);
             }
             println!("{:-^70}", "");
 

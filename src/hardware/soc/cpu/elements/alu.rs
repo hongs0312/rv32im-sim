@@ -7,6 +7,7 @@
 */
 
 // // 고유한 ALU 제어 신호 정의
+#![allow(clippy::all)]
 
 use crate::hardware::soc::types::OpStatus;
 

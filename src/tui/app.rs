@@ -48,45 +48,45 @@ pub fn run_tui(mut soc: SoC) -> io::Result<()> {
                 soc.tick();
 
                 // 자동 재생 중에도 입력이 있는지 아주 짧게 검사 (1ms 대기)
-                if event::poll(Duration::from_millis(1))? {
-                    if let Event::Key(key) = event::read()? {
-                        match key.code {
-                            KeyCode::Char('a') | KeyCode::Char(' ') => auto_run = false, // 'a' 또는 스페이스바 누르면 자동 실행 중지
-                            KeyCode::Char('q') => break, // 'q' 누르면 종료
-                            KeyCode::Char('c')
-                                if key
-                                    .modifiers
-                                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
-                            {
-                                break;
-                            }
-                            _ => {}
+                if event::poll(Duration::from_millis(1))?
+                    && let Event::Key(key) = event::read()?
+                {
+                    match key.code {
+                        KeyCode::Char('a') | KeyCode::Char(' ') => auto_run = false, // 'a' 또는 스페이스바 누르면 자동 실행 중지
+                        KeyCode::Char('q') => break, // 'q' 누르면 종료
+                        KeyCode::Char('c')
+                            if key
+                                .modifiers
+                                .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                        {
+                            break;
                         }
+                        _ => {}
                     }
                 }
             }
             false => {
-                if event::poll(Duration::from_millis(100))? {
-                    if let Event::Key(key) = event::read()? {
-                        match key.code {
-                            KeyCode::Char('q') => break, // 'q' 누르면 종료
-                            KeyCode::Char('c')
-                                if key
-                                    .modifiers
-                                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
-                            {
-                                break;
-                            }
-                            KeyCode::Char(' ') | KeyCode::Right => soc.tick(), // 스페이스바 또는 오른쪽 화살표 누르면 1 Cycle 실행
-                            KeyCode::Enter => {
-                                // 빨리 감기: 한 번에 1000 Cycle 실행
-                                for _ in 0..1000 {
-                                    soc.tick();
-                                }
-                            }
-                            KeyCode::Char('a') => auto_run = true, // 'a' 누르면 자동 실행 시작
-                            _ => {}
+                if event::poll(Duration::from_millis(100))?
+                    && let Event::Key(key) = event::read()?
+                {
+                    match key.code {
+                        KeyCode::Char('q') => break, // 'q' 누르면 종료
+                        KeyCode::Char('c')
+                            if key
+                                .modifiers
+                                .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                        {
+                            break;
                         }
+                        KeyCode::Char(' ') | KeyCode::Right => soc.tick(), // 스페이스바 또는 오른쪽 화살표 누르면 1 Cycle 실행
+                        KeyCode::Enter => {
+                            // 빨리 감기: 한 번에 1000 Cycle 실행
+                            for _ in 0..1000 {
+                                soc.tick();
+                            }
+                        }
+                        KeyCode::Char('a') => auto_run = true, // 'a' 누르면 자동 실행 시작
+                        _ => {}
                     }
                 }
             }
