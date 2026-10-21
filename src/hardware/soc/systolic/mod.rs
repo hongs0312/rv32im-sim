@@ -110,7 +110,7 @@ impl SystolicArray {
 
                 self.cycle += 1;
 
-                let total_cycles = ARRAY_SIZE * 2 + INNER_DIM - 2;
+                let total_cycles = ARRAY_SIZE * 2 + INNER_DIM - 1;
                 if self.cycle >= total_cycles {
                     self.dma.start_store(self.addr_c);
                     self.state = SystolicState::Storing;
