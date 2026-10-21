@@ -1,4 +1,5 @@
 pub mod dma;
+pub mod mmio;
 pub mod processing_element;
 pub mod scratchpad;
 
@@ -184,7 +185,7 @@ mod tests {
         // 상태가 완료(2)가 될 때까지 사이클을 진행
         let mut total_cycles = 0;
         while systolic.status != 2 {
-            let mut system_bus = SystemBus::memory(bus_owner, &mut dram);
+            let mut system_bus = SystemBus::new(bus_owner, &mut dram, &mut []);
             systolic.step(&mut system_bus);
             bus_owner = system_bus.owner;
             total_cycles += 1;

@@ -6,6 +6,7 @@
 pub mod elements;
 pub mod pipeline_stage;
 
+use crate::hardware::soc::cpu::elements::csr::CsrFile;
 use crate::hardware::soc::system_bus::SystemBus;
 use crate::hardware::soc::types::OpStatus;
 use elements::{
@@ -20,6 +21,7 @@ pub struct Cpu {
     pub pc: u32,
     pub regs: RegisterFile,
     pub alu: Alu,
+    pub csr: CsrFile, // CSR 레지스터 파일
 
     pub i_cache: L1Cache, // L1 명령어 캐시
     pub d_cache: L1Cache, // L1 데이터 캐시
@@ -36,6 +38,7 @@ impl Cpu {
             pc: 0,
             regs: RegisterFile::new(),
             alu: Alu::new(),
+            csr: CsrFile::new(),
 
             i_cache: L1Cache::new(),
             d_cache: L1Cache::new(),
@@ -44,6 +47,16 @@ impl Cpu {
             id_ex_reg: IdExRegister::default(),
             ex_mem_reg: ExMemRegister::default(),
             mem_wb_reg: MemWbRegister::default(),
+        }
+    }
+
+    fn oldest_uncommitted_pc(&self) -> u32 {
+        if self.id_ex_reg.pc != 0 {
+            self.id_ex_reg.pc
+        } else if self.if_id_reg.pc != 0 {
+            self.if_id_reg.pc
+        } else {
+            self.pc // 파이프라인 앞단이 비어있다면 다음 인출할 PC가 복귀 주소!
         }
     }
 
@@ -58,6 +71,27 @@ impl Cpu {
             OpStatus::Complete(reg) => reg,
             OpStatus::Busy => MemWbRegister::default(),
         };
+
+        // mem 단계가 바쁘지 않다면 인터럽트 발생 여부를 확인하고, 발생 시 파이프라인을 초기화하고 트랩 처리 루틴으로 점프
+        if !is_mem_busy {
+            if let Some(cause) = self.csr.check_pending_interrupt() {
+                let return_pc = self.oldest_uncommitted_pc();
+                let trap_target_pc = self.csr.enter_trap(cause, return_pc, 0);
+
+                // 인터럽트 발생 시 파이프라인 초기화
+                self.if_id_reg = IfIdRegister::default();
+                self.id_ex_reg = IdExRegister::default();
+                self.ex_mem_reg = ExMemRegister::default();
+
+                self.mem_wb_reg = next_mem_wb_reg; // MEM 단계 결과는 그대로 유지
+
+                // 인터럽트 처리 루틴으로 점프
+                self.pc = trap_target_pc;
+                self.i_cache.reset(); // 명령어 캐시 초기화
+
+                return;
+            }
+        }
 
         // 3. EX 단계 실행
         let ex_status = match is_mem_busy {
