@@ -181,7 +181,10 @@ fn run_pipeline_simulation(mut soc: SoC, verbose: bool, max_steps: usize) {
             println!(" - 시스톨릭 어레이 가속 소요 클럭\t: {} cycles", sys_cycles);
 
             if sys_cycles > 0 {
-                println!(" => 성능 향상(Speedup)\t\t\t: 약 {:.2} 배 빠름!", cpu_cycles as f64 / sys_cycles as f64);
+                println!(
+                    " => 성능 향상(Speedup)\t\t\t: 약 {:.2} 배 빠름!",
+                    cpu_cycles as f64 / sys_cycles as f64
+                );
             }
             println!("{:-^70}", "");
 
