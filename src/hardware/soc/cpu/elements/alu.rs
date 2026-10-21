@@ -6,12 +6,13 @@
     - Branch 명령어의 경우, ALU는 비교 연산을 수행하여 조건 분기 여부를 결정합니다.
 */
 
-// // 고유한 ALU 제어 신호 정의
-#![allow(clippy::all)]
+// #![allow(clippy::all)]
 
 use crate::hardware::soc::types::OpStatus;
 
+// 고유한 ALU 제어 신호 정의
 #[rustfmt::skip]
+#[allow (clippy::all)]
 enum AluControl {
     ADD, SUB, AND, OR, XOR,
     SLL, SRL, SRA, SLT, SLTU,
@@ -229,5 +230,11 @@ impl Alu {
 
         let alu_out = self.execute(a, b, alu_control_signal);
         OpStatus::Complete((alu_out, alu_out == 0))
+    }
+}
+
+impl Default for Alu {
+    fn default() -> Self {
+        Self::new()
     }
 }
