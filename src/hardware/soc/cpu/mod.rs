@@ -1,219 +1,29 @@
-/*
-    CPU 모듈
-    - CPU는 5단계 파이프라인 구조를 가지며, 각 단계는 별도의 레지스터를 사용하여 데이터를 전달함
-*/
+pub mod core;
 
-pub mod elements;
-pub mod pipeline_stage;
-
-use crate::hardware::soc::cpu::elements::csr::CsrFile;
 use crate::hardware::soc::system_bus::SystemBus;
-use crate::hardware::soc::types::OpStatus;
-use elements::{
-    alu::Alu, cache::L1Cache, control::branch_controller::BranchController,
-    hazard_detection_unit::HazardDetectionUnit, register::RegisterFile,
-};
-
-use pipeline_stage::{ExMemRegister, IdExRegister, IfIdRegister, MemWbRegister};
-use pipeline_stage::{execute, instruction_decode, instruction_fetch, memory_access, write_back};
 
 pub struct Cpu {
-    pub pc: u32,
-    pub regs: RegisterFile,
-    pub alu: Alu,
-    pub csr: CsrFile, // CSR 레지스터 파일
-
-    pub i_cache: L1Cache, // L1 명령어 캐시
-    pub d_cache: L1Cache, // L1 데이터 캐시
-
-    pub if_id_reg: IfIdRegister,
-    pub id_ex_reg: IdExRegister,
-    pub ex_mem_reg: ExMemRegister,
-    pub mem_wb_reg: MemWbRegister,
+    pub core0: core::Core,
 }
 
 impl Cpu {
     pub fn new() -> Self {
         Self {
-            pc: 0,
-            regs: RegisterFile::new(),
-            alu: Alu::new(),
-            csr: CsrFile::new(),
-
-            i_cache: L1Cache::new(),
-            d_cache: L1Cache::new(),
-
-            if_id_reg: IfIdRegister::default(),
-            id_ex_reg: IdExRegister::default(),
-            ex_mem_reg: ExMemRegister::default(),
-            mem_wb_reg: MemWbRegister::default(),
+            core0: core::Core::new(),
         }
     }
 
-    fn oldest_uncommitted_pc(&self) -> u32 {
-        if self.id_ex_reg.pc != 0 {
-            self.id_ex_reg.pc
-        } else if self.if_id_reg.pc != 0 {
-            self.if_id_reg.pc
-        } else {
-            self.pc // 파이프라인 앞단이 비어있다면 다음 인출할 PC가 복귀 주소!
-        }
+    /// SoC로부터 인터럽트 신호를 받아 각 코어에 분배
+    pub fn update_interrupt_pins(&mut self, sw_irq: bool, timer_irq: bool, ext_irq: bool) {
+        // 나중에 듀얼코어가 되면 CLINT가 주는 timer_irq_0, timer_irq_1을
+        // 각각 core0, core1로 찢어서 넣어주는 라우팅 로직이 여기에 들어갑니다.
+        self.core0
+            .csr
+            .update_interrupt_pins(sw_irq, timer_irq, ext_irq);
     }
 
-    pub fn pipeline_step(&mut self, mem_bus: &mut SystemBus, inject_nop: bool) {
-        // 1. WB 및 MEM 단계 실행 (역순)
-        self.write_back(self.mem_wb_reg);
-
-        let mem_status = self.memory_access(mem_bus, self.ex_mem_reg);
-        let is_mem_busy = matches!(mem_status, OpStatus::Busy);
-
-        let next_mem_wb_reg = match mem_status {
-            OpStatus::Complete(reg) => reg,
-            OpStatus::Busy => MemWbRegister::default(),
-        };
-
-        // mem 단계가 바쁘지 않다면 인터럽트 발생 여부를 확인하고, 발생 시 파이프라인을 초기화하고 트랩 처리 루틴으로 점프
-        if !is_mem_busy {
-            if let Some(cause) = self.csr.check_pending_interrupt() {
-                let return_pc = self.oldest_uncommitted_pc();
-                let trap_target_pc = self.csr.enter_trap(cause, return_pc, 0);
-
-                // 인터럽트 발생 시 파이프라인 초기화
-                self.if_id_reg = IfIdRegister::default();
-                self.id_ex_reg = IdExRegister::default();
-                self.ex_mem_reg = ExMemRegister::default();
-
-                self.mem_wb_reg = next_mem_wb_reg; // MEM 단계 결과는 그대로 유지
-
-                // 인터럽트 처리 루틴으로 점프
-                self.pc = trap_target_pc;
-                self.i_cache.reset(); // 명령어 캐시 초기화
-
-                return;
-            }
-        }
-
-        // 3. EX 단계 실행
-        let ex_status = match is_mem_busy {
-            true => OpStatus::Busy,
-            false => self.execute(self.id_ex_reg, &next_mem_wb_reg),
-        };
-        let is_ex_busy = matches!(ex_status, OpStatus::Busy);
-
-        // EX 단계 래치 결과 및 분기 판정 제어 신호 추출
-        let (next_ex_mem_reg, pcsrc, branch_target) = match ex_status {
-            OpStatus::Complete(ex_reg) => {
-                let branch_taken = ex_reg.control.branch
-                    && BranchController::get_branch_condition(
-                        ex_reg.alu_result,
-                        ex_reg.zero,
-                        ex_reg.control.funct3,
-                    );
-
-                let is_pcsrc = ex_reg.control.jump || branch_taken;
-
-                (ex_reg, is_pcsrc, ex_reg.target_pc)
-            }
-            OpStatus::Busy => (ExMemRegister::default(), false, 0),
-        };
-
-        // 4. 앞단 실행 (ID, IF)
-        let is_stall = HazardDetectionUnit::check_load_use(
-            self.id_ex_reg.control.mem_read,
-            self.id_ex_reg.rd,
-            self.if_id_reg.instruction,
-        );
-
-        let next_id_ex_reg = self.instruction_decode(self.if_id_reg);
-
-        let if_status = self.instruction_fetch(mem_bus, inject_nop);
-        let is_if_busy = matches!(if_status, OpStatus::Busy);
-
-        let next_if_id_reg = match if_status {
-            OpStatus::Complete(reg) => reg,
-            OpStatus::Busy => IfIdRegister::default(), // 스톨 시 NOP처럼 동작
-        };
-
-        let stall_mem = is_mem_busy;
-        let stall_ex = is_mem_busy || is_ex_busy;
-        let stall_id = stall_ex || is_stall;
-        let stall_if = stall_id || is_if_busy;
-
-        // Ghost Stall 무시: 어차피 점프(pcsrc)로 인해 버려질 명령어들이 만든 스톨은 무시합니다!
-        if pcsrc {
-            // 분기/점프 발생 시 스톨 무시
-            self.pc = branch_target;
-            self.if_id_reg = IfIdRegister::default();
-            self.id_ex_reg = IdExRegister::default();
-
-            self.i_cache.reset();
-            mem_bus.reset();
-        } else {
-            // 5. 래치 업데이트
-            if !stall_if && !inject_nop {
-                self.pc = self.pc.wrapping_add(4);
-            }
-
-            if !stall_id {
-                self.if_id_reg = match is_if_busy {
-                    true => IfIdRegister::default(), // 스톨 시 NOP처럼 동작
-                    false => next_if_id_reg,
-                };
-            }
-
-            if !stall_ex {
-                self.id_ex_reg = match is_stall {
-                    true => IdExRegister::default(), // 스톨 시 NOP처럼 동작
-                    false => next_id_ex_reg,
-                };
-            }
-        }
-
-        if !stall_mem {
-            self.ex_mem_reg = match is_ex_busy {
-                true => ExMemRegister::default(),
-                false => next_ex_mem_reg,
-            }
-        }
-
-        self.mem_wb_reg = match is_mem_busy {
-            true => MemWbRegister::default(),
-            false => next_mem_wb_reg,
-        };
-    }
-
-    // 파이프라인 단계별 실행 메서드
-    // 각 단계의 실행은 pipeline_stage 모듈의 execute 함수를 호출하여 수행
-    fn instruction_fetch(
-        &mut self,
-        mem_bus: &mut SystemBus,
-        inject_nop: bool,
-    ) -> OpStatus<IfIdRegister> {
-        instruction_fetch::execute(self, mem_bus, inject_nop)
-    }
-
-    fn instruction_decode(&mut self, if_id_reg: IfIdRegister) -> IdExRegister {
-        instruction_decode::execute(self, if_id_reg)
-    }
-
-    fn execute(
-        &mut self,
-        id_ex_reg: IdExRegister,
-        next_mem_wb_reg: &MemWbRegister,
-    ) -> OpStatus<ExMemRegister> {
-        execute::execute(self, id_ex_reg, next_mem_wb_reg)
-    }
-
-    fn memory_access(
-        &mut self,
-        mem_bus: &mut SystemBus,
-        ex_mem_reg: ExMemRegister,
-    ) -> OpStatus<MemWbRegister> {
-        memory_access::execute(self, mem_bus, ex_mem_reg)
-    }
-
-    fn write_back(&mut self, mem_wb_reg: MemWbRegister) {
-        write_back::execute(self, mem_wb_reg)
+    pub fn tick(&mut self, mem_bus: &mut SystemBus, inject_nop: bool) {
+        self.core0.pipeline_step(mem_bus, inject_nop);
     }
 }
 

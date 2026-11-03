@@ -15,19 +15,19 @@ fn arithmetic_and_logic_instructions_execute() {
         0x0030e633, // or x12, x1, x3 = 14
         0x0030f6b3, // and x13, x1, x3 = 2
     ];
-    let mut soc = load_program(&program);
+    let mut hw = load_program(&program);
 
-    run_cycles(&mut soc, 120);
+    run_cycles(&mut hw, 120);
 
-    assert_eq!(soc.cpu.regs.read(1), 10);
-    assert_eq!(soc.cpu.regs.read(2), 0xffff_fffc);
-    assert_eq!(soc.cpu.regs.read(3), 6);
-    assert_eq!(soc.cpu.regs.read(4), 0xffff_fffc);
-    assert_eq!(soc.cpu.regs.read(6), 640);
-    assert_eq!(soc.cpu.regs.read(7), 1);
-    assert_eq!(soc.cpu.regs.read(9), 12);
-    assert_eq!(soc.cpu.regs.read(12), 14);
-    assert_eq!(soc.cpu.regs.read(13), 2);
+    assert_eq!(hw.soc.cpu.core0.regs.read(1), 10);
+    assert_eq!(hw.soc.cpu.core0.regs.read(2), 0xffff_fffc);
+    assert_eq!(hw.soc.cpu.core0.regs.read(3), 6);
+    assert_eq!(hw.soc.cpu.core0.regs.read(4), 0xffff_fffc);
+    assert_eq!(hw.soc.cpu.core0.regs.read(6), 640);
+    assert_eq!(hw.soc.cpu.core0.regs.read(7), 1);
+    assert_eq!(hw.soc.cpu.core0.regs.read(9), 12);
+    assert_eq!(hw.soc.cpu.core0.regs.read(12), 14);
+    assert_eq!(hw.soc.cpu.core0.regs.read(13), 2);
 }
 
 #[test]
@@ -42,14 +42,14 @@ fn branch_and_jump_update_pc_and_flush_wrong_path() {
         0x06300293, // flushed by jal
         0x01400313, // jump target: addi x6, x0, 20
     ];
-    let mut soc = load_program(&program);
+    let mut hw = load_program(&program);
 
     for _ in 0..8 {
-        run_cycles(&mut soc, 120);
+        run_cycles(&mut hw, 120);
     }
 
-    assert_eq!(soc.cpu.regs.read(3), 0);
-    assert_eq!(soc.cpu.regs.read(4), 10);
-    assert_eq!(soc.cpu.regs.read(5), 0);
-    assert_eq!(soc.cpu.regs.read(6), 20);
+    assert_eq!(hw.soc.cpu.core0.regs.read(3), 0);
+    assert_eq!(hw.soc.cpu.core0.regs.read(4), 10);
+    assert_eq!(hw.soc.cpu.core0.regs.read(5), 0);
+    assert_eq!(hw.soc.cpu.core0.regs.read(6), 20);
 }

@@ -9,8 +9,13 @@ use dma::{DmaState, SystolicDma};
 use processing_element::ProcessingElement;
 use scratchpad::Scratchpad;
 
+use processing_element::MAC_LATENCY;
+
 pub const ARRAY_SIZE: usize = 16;
 pub const INNER_DIM: usize = 16;
+
+pub const SYSTOLIC_BASE: u32 = 0x4000_0000;
+pub const SYSTOLIC_SIZE: u32 = 0x1000; // 4KB
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct StreamValue {
@@ -111,7 +116,7 @@ impl SystolicArray {
 
                 self.cycle += 1;
 
-                let total_cycles = ARRAY_SIZE * 2 + INNER_DIM - 1;
+                let total_cycles = (ARRAY_SIZE * 2 - 2) + (INNER_DIM - 1) + MAC_LATENCY;
                 if self.cycle >= total_cycles {
                     self.dma.start_store(self.addr_c);
                     self.state = SystolicState::Storing;
@@ -185,7 +190,7 @@ mod tests {
         // 상태가 완료(2)가 될 때까지 사이클을 진행
         let mut total_cycles = 0;
         while systolic.status != 2 {
-            let mut system_bus = SystemBus::new(bus_owner, &mut dram, &mut []);
+            let mut system_bus = SystemBus::new(bus_owner, &mut dram, &mut [], &mut []);
             systolic.step(&mut system_bus);
             bus_owner = system_bus.owner;
             total_cycles += 1;

@@ -1,15 +1,22 @@
+OUTPUT_ARCH("riscv")
 ENTRY(_start)
 
 SECTIONS
 {
-    . = 0x00000000;
-    
-    /* 1. 무조건 .init(entry.s)을 0번지 맨 앞에 강제 배치! */
-    .init : { *(.init) }
-    
-    /* 2. 그 다음부터 일반 코드와 데이터를 차례대로 쌓음 */
-    .text : { *(.text .text.*) }
+    /* SBI가 점프하는 도착지 */
+    . = 0x80200000;
+
+    .text : {
+        *(.text.init)
+        
+        /* 그 다음 나머지 C 코드들의 기계어를 배치 */
+        *(.text .text.*)
+    }
+
     .rodata : { *(.rodata .rodata.*) }
-    .data : { *(.data .data.* .sdata .sdata.*) }
-    .bss : { *(.bss .bss.* .sbss .sbss.*) }
+    .data : { *(.data .data.*) }
+    .bss : { 
+        *(.bss .bss.*) 
+        *(COMMON)
+    }
 }

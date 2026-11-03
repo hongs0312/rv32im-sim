@@ -5,6 +5,8 @@
 */
 use super::StreamValue;
 
+pub const MAC_LATENCY: usize = 2; // 곱셈-누적 연산에 필요한 사이클 수 (파이프라인 구조로 인해 2사이클 소요)
+
 #[derive(Clone, Copy, Default)]
 pub struct ProcessingElement {
     pub psum: i32, // OS 방식: PE 내부에 고정되어 누적되는 결과 (Accumulator)

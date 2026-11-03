@@ -1,4 +1,4 @@
-use crate::hardware::soc::cpu::elements::decoder::Decoder;
+use crate::hardware::soc::cpu::core::decoder::Decoder;
 
 #[rustfmt::skip]
 pub fn disassemble(inst: u32) -> String {
@@ -69,17 +69,47 @@ pub fn disassemble(inst: u32) -> String {
             };
             format!("{} x{}, x{}, {}", op, rs1, rs2, { imm })
         }
-        0x73 => { // SYSTEM (ECALL, EBREAK, CSR)
-            let imm_12 = imm & 0xFFF; // I-Type 형태의 상위 12비트
+        0x0F => { // FENCE & FENCE.I
+            if funct3 == 0b000 {
+                "FENCE".to_string()
+            } else if funct3 == 0b001 {
+                "FENCE.I".to_string()
+            } else {
+                format!("UNKNOWN_FENCE (funct3: 0b{:03b})", funct3)
+            }
+        }
+        0x73 => { // SYSTEM (ECALL, EBREAK, SRET, SFENCE.VMA, CSR)
+            let imm_12 = imm & 0xFFF; // I-Type 형태의 상위 12비트 (CSR 주소 등)
+            
             match funct3 {
                 0 => {
                     match imm_12 {
-                        0 => "ECALL".to_string(),
-                        1 => "EBREAK".to_string(),
-                        0x302 => "MRET".to_string(), // 특권 모드 복귀 명령어 (필요시)
-                        _ => format!("SYSTEM_PRIV (0x{:03X})", imm_12),
+                        0x000 => "ECALL".to_string(),
+                        0x001 => "EBREAK".to_string(),
+                        0x102 => "SRET".to_string(), // OS 문맥 전환(Trap 복귀) 필수 명령어
+                        0x105 => "WFI".to_string(),  // 인터럽트 대기
+                        0x302 => "MRET".to_string(),
+                        _ => {
+                            // SFENCE.VMA는 funct7(상위 7비트)이 0x09 (0b0001001)임
+                            if (imm_12 >> 5) == 0x09 {
+                                // rs1과 rs2(imm_12의 하위 5비트)를 포함해 출력할 수도 있음
+                                "SFENCE.VMA".to_string() 
+                            } else {
+                                format!("SYSTEM_PRIV (0x{:03X})", imm_12)
+                            }
+                        }
                     }
                 }
+                // CSR 제어 명령어: OS 상태 레지스터 접근용
+                1 => format!("CSRRW x{}, 0x{:03X}, x{}", rd, imm_12, rs1),
+                2 => format!("CSRRS x{}, 0x{:03X}, x{}", rd, imm_12, rs1),
+                3 => format!("CSRRC x{}, 0x{:03X}, x{}", rd, imm_12, rs1),
+                
+                // CSR Immediate 계열: rs1 필드 자체가 5비트 상수(zimm)로 사용됨
+                5 => format!("CSRRWI x{}, 0x{:03X}, {}", rd, imm_12, rs1),
+                6 => format!("CSRRSI x{}, 0x{:03X}, {}", rd, imm_12, rs1),
+                7 => format!("CSRRCI x{}, 0x{:03X}, {}", rd, imm_12, rs1),
+                
                 _ => "UNKNOWN_SYSTEM".to_string(),
             }
         }

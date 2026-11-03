@@ -17,26 +17,26 @@ fn pipeline_handles_forwarding_load_use_and_branch_flush() {
         0x06400413, // addi x8, x0, 100
         0x06400413, // branch target
     ];
-    let mut soc = load_program(&program);
+    let mut hw = load_program(&program);
 
-    run_cycles(&mut soc, 80);
+    run_cycles(&mut hw, 80);
 
-    assert_eq!(soc.cpu.regs.read(1), 10);
-    assert_eq!(soc.cpu.regs.read(2), 20);
-    assert_eq!(soc.cpu.regs.read(3), 30);
-    assert_eq!(soc.cpu.regs.read(4), 20);
-    assert_eq!(soc.cpu.regs.read(5), 20);
-    assert_eq!(soc.cpu.regs.read(6), 30);
-    assert_eq!(soc.cpu.regs.read(7), 0);
-    assert_eq!(soc.cpu.regs.read(8), 100);
+    assert_eq!(hw.soc.cpu.core0.regs.read(1), 10);
+    assert_eq!(hw.soc.cpu.core0.regs.read(2), 20);
+    assert_eq!(hw.soc.cpu.core0.regs.read(3), 30);
+    assert_eq!(hw.soc.cpu.core0.regs.read(4), 20);
+    assert_eq!(hw.soc.cpu.core0.regs.read(5), 20);
+    assert_eq!(hw.soc.cpu.core0.regs.read(6), 30);
+    assert_eq!(hw.soc.cpu.core0.regs.read(7), 0);
+    assert_eq!(hw.soc.cpu.core0.regs.read(8), 100);
 }
 
 #[test]
 fn soc_tick_advances_shared_bus_and_cpu_together() {
-    let mut soc = load_program(&[0x02a00093]); // addi x1, x0, 42
+    let mut hw = load_program(&[0x02a00093]); // addi x1, x0, 42
 
-    run_cycles(&mut soc, 12);
+    run_cycles(&mut hw, 12);
 
-    assert_eq!(soc.cpu.regs.read(1), 42);
-    assert!(soc.cycle >= 12);
+    assert_eq!(hw.soc.cpu.core0.regs.read(1), 42);
+    assert!(hw.soc.cycle >= 12);
 }

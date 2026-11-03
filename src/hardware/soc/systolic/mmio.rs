@@ -1,9 +1,9 @@
-use crate::hardware::soc::system_bus::mmio_device::MmioDevice;
+use crate::hardware::mmio_device::MmioDevice;
 
 use super::SystolicArray;
 
 impl MmioDevice for SystolicArray {
-    fn read(&self, offset: u32) -> Result<u32, String> {
+    fn read(&mut self, offset: u32) -> Result<u32, String> {
         match offset {
             0x00 => Ok(self.status),
             0x20 => Ok(self.global_time),

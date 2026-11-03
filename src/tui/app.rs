@@ -7,9 +7,10 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{io, time::Duration};
 
 use super::render;
-use crate::{hardware::soc::SoC, tui::snapshot::Snapshot};
 
-pub fn run_tui(mut soc: SoC) -> io::Result<()> {
+use crate::{hardware::Hardware, sim_log, tui::snapshot::Snapshot};
+
+pub fn run_tui(mut hardware: Hardware) -> io::Result<()> {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         let _ = disable_raw_mode();
@@ -25,35 +26,31 @@ pub fn run_tui(mut soc: SoC) -> io::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut auto_run = false; // 자동 실행 모드 여부
+    let mut view_mode = render::RightBottomView::Systolic; // 초기 뷰 모드 설정
 
     loop {
-        // 1. 현재 SoC 상태를 Snapshot으로 추출
-        let snapshot = Snapshot::from(&soc);
+        // 1. 현재 SoC 상태를 Snapshot으로 추출 (기존 Snapshot::from(&SoC) 재사용)
+        let snapshot = Snapshot::from(&hardware.soc);
 
         // 2. 화면 그리기
-        terminal.draw(|f| render::draw(f, &snapshot))?;
+        terminal.draw(|f| render::draw(f, &snapshot, &mut view_mode))?;
 
-        // ecall이 파이프라인 끝단에 도달했는지 확인
-        if soc.cpu.mem_wb_reg.control.is_ecall || soc.cpu.ex_mem_reg.control.is_ecall {
-            // 시뮬레이션을 완전히 끝내고 즉시 종료하려면 break를 활성화합니다.
-            // break;
-
-            // 만약 종료하지 않고 마지막 레지스터 상태를 TUI 화면에서 감상하고 싶다면
-            // break 대신 아래처럼 자동 재생만 끄고 입력 대기 상태로 둘 수 있습니다.
+        if hardware.syscon.is_halted {
             auto_run = false;
         }
 
         match auto_run {
             true => {
-                soc.tick();
+                // 💡 최상위 메인보드 틱 호출
+                hardware.tick();
 
                 // 자동 재생 중에도 입력이 있는지 아주 짧게 검사 (1ms 대기)
                 if event::poll(Duration::from_millis(1))?
                     && let Event::Key(key) = event::read()?
                 {
                     match key.code {
-                        KeyCode::Char('a') | KeyCode::Char(' ') => auto_run = false, // 'a' 또는 스페이스바 누르면 자동 실행 중지
-                        KeyCode::Char('q') => break, // 'q' 누르면 종료
+                        KeyCode::Char('a') | KeyCode::Char(' ') => auto_run = false,
+                        KeyCode::Char('q') => break,
                         KeyCode::Char('c')
                             if key
                                 .modifiers
@@ -70,7 +67,17 @@ pub fn run_tui(mut soc: SoC) -> io::Result<()> {
                     && let Event::Key(key) = event::read()?
                 {
                     match key.code {
-                        KeyCode::Char('q') => break, // 'q' 누르면 종료
+                        KeyCode::Tab => {
+                            view_mode = match view_mode {
+                                render::RightBottomView::Systolic => {
+                                    render::RightBottomView::Registers
+                                }
+                                render::RightBottomView::Registers => {
+                                    render::RightBottomView::Systolic
+                                }
+                            };
+                        }
+                        KeyCode::Char('q') => break,
                         KeyCode::Char('c')
                             if key
                                 .modifiers
@@ -78,14 +85,22 @@ pub fn run_tui(mut soc: SoC) -> io::Result<()> {
                         {
                             break;
                         }
-                        KeyCode::Char(' ') | KeyCode::Right => soc.tick(), // 스페이스바 또는 오른쪽 화살표 누르면 1 Cycle 실행
+                        // 💡 스페이스바 또는 오른쪽 화살표 누르면 1 Cycle 실행
+                        KeyCode::Char(' ') | KeyCode::Right => hardware.tick(),
                         KeyCode::Enter => {
-                            // 빨리 감기: 한 번에 1000 Cycle 실행
+                            // 빨리 감기: 한 번에 100 Cycle 실행
                             for _ in 0..1000 {
-                                soc.tick();
+                                if hardware.syscon.is_halted {
+                                    sim_log!(
+                                        "[TUI] 프로그램이 종료되었습니다. (PC: 0x{:08X})",
+                                        hardware.soc.cpu.core0.pc
+                                    );
+                                    break;
+                                }
+                                hardware.tick();
                             }
                         }
-                        KeyCode::Char('a') => auto_run = true, // 'a' 누르면 자동 실행 시작
+                        KeyCode::Char('a') => auto_run = true,
                         _ => {}
                     }
                 }

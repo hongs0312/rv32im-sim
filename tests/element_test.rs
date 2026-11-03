@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use rv32i_sim::hardware::soc::cpu::elements::{alu::Alu, decoder::*};
+    use rv32i_sim::hardware::soc::cpu::core::{alu::Alu, decoder::*};
     use rv32i_sim::hardware::soc::types::OpStatus;
 
     #[test]
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn register_file_test() {
-        let mut regs = rv32i_sim::hardware::soc::cpu::elements::register::RegisterFile::new();
+        let mut regs = rv32i_sim::hardware::soc::cpu::core::register::RegisterFile::new();
 
         // Test writing to a register
         regs.write(1, 42, true);

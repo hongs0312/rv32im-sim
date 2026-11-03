@@ -1,5 +1,7 @@
 use crate::hardware::soc::SoC;
-use crate::hardware::soc::cpu::elements::cache::CacheState;
+use crate::hardware::soc::cpu::core::cache::CacheState;
+use crate::hardware::soc::cpu::core::csr::CsrFile;
+use crate::hardware::soc::cpu::core::register::RegisterFile;
 use crate::hardware::soc::system_bus::BusOwner;
 use crate::hardware::soc::systolic::SystolicState;
 use crate::hardware::soc::systolic::dma::{DmaPointers, DmaState};
@@ -14,7 +16,8 @@ pub struct Snapshot {
     pub pc: u32,
     pub pipeline: PipelineSnapshot,
 
-    pub registers: [u32; 32],
+    pub registers: RegisterFile,
+    pub csr: CsrFile,
 
     pub i_cache_state: String,
     pub d_cache_state: String,
@@ -26,6 +29,8 @@ pub struct Snapshot {
     pub systolic_grid: Vec<String>,
     pub sram_a_grid: Vec<String>,
     pub sram_b_grid: Vec<String>,
+
+    pub logs: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,44 +45,54 @@ pub struct PipelineSnapshot {
 impl From<&SoC> for Snapshot {
     fn from(soc: &SoC) -> Self {
         // --- 1. Pipeline Stages ---
-        let if_id_str = if soc.cpu.if_id_reg.instruction == 0x00000013 {
+        let if_id_str = if soc.cpu.core0.if_id_reg.instruction == 0x00000013 {
             "BUBBLE (NOP)".to_string()
         } else {
             format!(
                 "PC: 0x{:08X} | {}",
-                soc.cpu.if_id_reg.pc,
-                disassemble(soc.cpu.if_id_reg.instruction)
+                soc.cpu.core0.if_id_reg.pc,
+                disassemble(soc.cpu.core0.if_id_reg.instruction)
             )
         };
 
-        let id_ex_str =
-            if soc.cpu.id_ex_reg.control.opcode == 0x13 && soc.cpu.id_ex_reg.control.funct3 == 0 {
-                "BUBBLE (NOP)".to_string()
-            } else {
-                format!(
-                    "PC: 0x{:08X} | rd: x{}",
-                    soc.cpu.id_ex_reg.pc, soc.cpu.id_ex_reg.rd
-                )
-            };
+        let id_ex_str = if soc.cpu.core0.id_ex_reg.control.opcode == 0x13
+            && soc.cpu.core0.id_ex_reg.control.funct3 == 0
+            && soc.cpu.core0.id_ex_reg.rd == 0
+        {
+            "BUBBLE (NOP)".to_string()
+        // } else if soc.cpu.core0.id_ex_reg.pc == 0 {
+        //     // 파이프라인 플러시나 초기화로 인해 0번지가 들어온 경우의 방어 로직 (선택 사항)
+        //     "BUBBLE (FLUSH)".to_string()
+        } else {
+            // ABI 별명 배열을 가져와서 x번호 대신 a0, sp 등으로 출력하면 더 직관적입니다.
+            format!(
+                "PC: 0x{:08X} | rd: x{}",
+                soc.cpu.core0.id_ex_reg.pc, soc.cpu.core0.id_ex_reg.rd
+            )
+        };
 
         let ex_mem_str = format!(
             "ALU Res: 0x{:08X} | rd: x{}",
-            soc.cpu.ex_mem_reg.alu_result, soc.cpu.ex_mem_reg.rd
+            soc.cpu.core0.ex_mem_reg.alu_result, soc.cpu.core0.ex_mem_reg.rd
         );
         let mem_wb_str = format!(
             "WB Data: 0x{:08X} | rd: x{}",
-            soc.cpu.mem_wb_reg.mem_data, soc.cpu.mem_wb_reg.rd
+            soc.cpu.core0.mem_wb_reg.mem_data, soc.cpu.core0.mem_wb_reg.rd
         );
-        let wb_str = if soc.cpu.mem_wb_reg.control.reg_write && soc.cpu.mem_wb_reg.rd != 0 {
-            let write_val = if soc.cpu.mem_wb_reg.control.wb_src {
-                soc.cpu.mem_wb_reg.mem_data
+        let wb_str =
+            if soc.cpu.core0.mem_wb_reg.control.reg_write && soc.cpu.core0.mem_wb_reg.rd != 0 {
+                let write_val = if soc.cpu.core0.mem_wb_reg.control.wb_src {
+                    soc.cpu.core0.mem_wb_reg.mem_data
+                } else {
+                    soc.cpu.core0.mem_wb_reg.alu_result
+                };
+                format!(
+                    "Write x{} = 0x{:08X}",
+                    soc.cpu.core0.mem_wb_reg.rd, write_val
+                )
             } else {
-                soc.cpu.mem_wb_reg.alu_result
+                "BUBBLE / No Write".to_string()
             };
-            format!("Write x{} = 0x{:08X}", soc.cpu.mem_wb_reg.rd, write_val)
-        } else {
-            "BUBBLE / No Write".to_string()
-        };
 
         let pipeline = PipelineSnapshot {
             if_id: if_id_str,
@@ -88,13 +103,11 @@ impl From<&SoC> for Snapshot {
         };
 
         // --- 2. Register File ---
-        let mut registers = [0; 32];
-        for (i, reg) in registers.iter_mut().enumerate() {
-            *reg = soc.cpu.regs.read(i as u8);
-        }
+        let registers = soc.cpu.core0.regs.clone();
+        let csr = soc.cpu.core0.csr.clone();
 
         // --- 3. Caches ---
-        let i_cache_state_str = match &soc.cpu.i_cache.state {
+        let i_cache_state_str = match &soc.cpu.core0.i_cache.state {
             CacheState::Idle => "Idle".to_string(),
             CacheState::WriteBackIssue => "WB Issue".to_string(),
             CacheState::WriteBackWait => "WB Wait".to_string(),
@@ -104,7 +117,7 @@ impl From<&SoC> for Snapshot {
             CacheState::FlushWait { index } => format!("Flush Wait ({})", index),
         };
 
-        let d_cache_state_str = match &soc.cpu.d_cache.state {
+        let d_cache_state_str = match &soc.cpu.core0.d_cache.state {
             CacheState::Idle => "Idle".to_string(),
             CacheState::WriteBackIssue => "WB Issue".to_string(),
             CacheState::WriteBackWait => "WB Wait".to_string(),
@@ -121,6 +134,7 @@ impl From<&SoC> for Snapshot {
             BusOwner::ICache => "I-Cache",
             BusOwner::DCache => "D-Cache",
             BusOwner::SystolicDma => "Systolic DMA",
+            BusOwner::VirtioDma => "Virtio DMA",
         }
         .to_string();
 
@@ -176,7 +190,7 @@ impl From<&SoC> for Snapshot {
 
             for j in 0..INNER_DIM {
                 if soc.systolic.pes[i][j].is_active
-                    && soc.systolic.state == SystolicState::Computing
+                // && soc.systolic.state == SystolicState::Computing
                 {
                     pe_row.push_str("■ ");
                 } else {
@@ -200,11 +214,20 @@ impl From<&SoC> for Snapshot {
             sram_b_grid.push(b_row);
         }
 
+        // --- 7. Logs ---
+        // OnceLock으로 초기화된 전역 버퍼에서 로그 복사
+        let logs = if let Ok(log_lock) = crate::logger::get_logs().lock() {
+            log_lock.clone()
+        } else {
+            Vec::new()
+        };
+
         Snapshot {
             cycle: soc.cycle,
-            pc: soc.cpu.pc,
+            pc: soc.cpu.core0.pc,
             pipeline,
             registers,
+            csr,
             i_cache_state: i_cache_state_str,
             d_cache_state: d_cache_state_str,
             bus_owner: bus_owner_str,
@@ -213,6 +236,7 @@ impl From<&SoC> for Snapshot {
             systolic_grid,
             sram_a_grid,
             sram_b_grid,
+            logs,
         }
     }
 }

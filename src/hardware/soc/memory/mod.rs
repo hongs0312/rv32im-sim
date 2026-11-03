@@ -6,6 +6,8 @@ use self::bank::{MemoryBank, ROW_SIZE};
 
 const NUM_BANKS: usize = 16;
 
+pub const DRAM_BASE: u32 = 0x8000_0000; // 메인 메모리 시작 주소
+
 pub struct Dram {
     pub banks: [MemoryBank; NUM_BANKS],
 }
@@ -73,8 +75,16 @@ impl Dram {
     // --- (디버깅용) CPU 부팅 전 C 바이너리(ELF)를 메모리에 직접 적재할 때 사용하는 백도어 ---
     // 시뮬레이터 초기화 단계에서만 사용되며, 타이밍 딜레이를 무시하고 뱅크에 직접 씁니다.
     pub fn load_firmware(&mut self, addr: u32, data: &[u8]) {
+        // 1. DRAM_BASE를 기준으로
+        let base_offset_addr = if addr >= 0x8000_0000 {
+            addr - 0x8000_0000
+        } else {
+            addr
+        };
+
         for (i, &byte) in data.iter().enumerate() {
-            let target_addr = addr + i as u32;
+            let target_addr = base_offset_addr + i as u32;
+
             let (bank_id, row, offset) = Self::decode_address(target_addr);
 
             // 뱅크 내부의 1차원 배열에 직접 접근하여 바이트 단위로 쓰기

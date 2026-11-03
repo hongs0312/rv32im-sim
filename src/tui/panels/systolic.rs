@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::Line,
-    widgets::{Block, Borders, Gauge, Paragraph},
+    widgets::{Block, Borders, LineGauge, Paragraph}, // Gauge 대신 LineGauge 사용
 };
 
 pub fn draw(f: &mut Frame, area: Rect, snapshot: &Snapshot) {
@@ -16,12 +16,13 @@ pub fn draw(f: &mut Frame, area: Rect, snapshot: &Snapshot) {
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
+    // 세로 공간 확보를 위해 프로그레스 바를 1줄(LineGauge)로 축소
     let vertical_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(18),
-            Constraint::Length(18),
-            Constraint::Length(3),
+            Constraint::Min(18), // Length 대신 Min을 사용하여 강제 축소 방지
+            Constraint::Min(18),
+            Constraint::Length(3), // 얇은 게이지용 3줄
             Constraint::Min(0),
         ])
         .split(inner_area);
@@ -93,13 +94,11 @@ pub fn draw(f: &mut Frame, area: Rect, snapshot: &Snapshot) {
         bottom_horizontal[1],
     );
 
-    let gauge = Gauge::default()
-        .block(
-            Block::default()
-                .title("Total Progress")
-                .borders(Borders::ALL),
-        )
+    // 두꺼운 Gauge 대신 1줄짜리 LineGauge로 교체하여 세로 2줄 절약
+    let gauge = LineGauge::default()
+        .block(Block::default().title(" Total Progress "))
         .gauge_style(Style::default().fg(Color::Yellow).bg(Color::DarkGray))
-        .percent(snapshot.systolic_progress);
+        .line_set(ratatui::symbols::line::THICK)
+        .ratio(snapshot.systolic_progress as f64 / 100.0); // LineGauge는 ratio(0.0~1.0) 사용
     f.render_widget(gauge, vertical_chunks[2]);
 }
