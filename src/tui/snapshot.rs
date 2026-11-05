@@ -1,7 +1,7 @@
 use crate::hardware::soc::SoC;
-use crate::hardware::soc::cpu::core::cache::CacheState;
-use crate::hardware::soc::cpu::core::csr::CsrFile;
-use crate::hardware::soc::cpu::core::register::RegisterFile;
+use crate::hardware::soc::cpu::core::components::cache::CacheState;
+use crate::hardware::soc::cpu::core::components::csr::CsrFile;
+use crate::hardware::soc::cpu::core::components::register::RegisterFile;
 use crate::hardware::soc::system_bus::BusOwner;
 use crate::hardware::soc::systolic::SystolicState;
 use crate::hardware::soc::systolic::dma::{DmaPointers, DmaState};

@@ -1,5 +1,12 @@
+/*
+    hardware/soc/cpu/core/control/mod.rs
+    - 전역 제어를 위한 모듈 및 ControlSignals 구조체 정의ㄴ
+*/
+
 pub mod branch_controller;
 pub mod control_unit;
+pub mod forwarding_unit;
+pub mod hazard_detection_unit;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ControlSignals {

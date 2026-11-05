@@ -1,5 +1,6 @@
 use crate::hardware::soc::cpu::core::Core;
-use crate::hardware::soc::cpu::core::{control::control_unit::ControlUnit, decoder::Decoder};
+use crate::hardware::soc::cpu::core::components::decoder::Decoder;
+use crate::hardware::soc::cpu::core::control::control_unit::ControlUnit;
 
 use super::{IdExRegister, IfIdRegister};
 

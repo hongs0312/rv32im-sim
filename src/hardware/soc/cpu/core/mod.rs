@@ -4,27 +4,16 @@
     - 향후 멀티코어(Multi-Hart), 분기 예측기(Branch Predictor), OoO 확장을 고려한 모듈화 구조
 */
 
-pub mod alu;
-pub mod cache;
+pub mod components;
 pub mod control;
-pub mod csr;
-pub mod decoder;
-pub mod mmu;
-pub mod register;
-
-pub mod forwarding_unit;
-pub mod hazard_detection_unit;
-
 pub mod pipeline_stage;
 
-use crate::hardware::soc::cpu::core::csr::CsrFile;
+use crate::hardware::soc::cpu::core::components::csr::CsrFile;
 use crate::hardware::soc::system_bus::SystemBus;
 use crate::hardware::soc::types::OpStatus;
 
-use {
-    alu::Alu, cache::L1Cache, control::branch_controller::BranchController,
-    hazard_detection_unit::HazardDetectionUnit, register::RegisterFile,
-};
+use components::{alu::Alu, cache::L1Cache, register::RegisterFile};
+use control::{branch_controller::BranchController, hazard_detection_unit::HazardDetectionUnit};
 
 use pipeline_stage::{ExMemRegister, IdExRegister, IfIdRegister, MemWbRegister};
 use pipeline_stage::{execute, instruction_decode, instruction_fetch, memory_access, write_back};
@@ -110,8 +99,8 @@ impl Core {
             csr: CsrFile::new(),
             privilege_mode: PrivilegeMode::Machine,
 
-            i_cache: L1Cache::new(),
-            d_cache: L1Cache::new(),
+            i_cache: L1Cache::new(true),
+            d_cache: L1Cache::new(false),
 
             if_id_reg: IfIdRegister::default(),
             id_ex_reg: IdExRegister::default(),

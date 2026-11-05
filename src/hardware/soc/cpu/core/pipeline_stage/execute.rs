@@ -1,6 +1,8 @@
 use crate::hardware::soc::cpu::core::Core;
 use crate::hardware::soc::cpu::core::control;
-use crate::hardware::soc::cpu::core::forwarding_unit::{ForwardA, ForwardB, ForwardingUnit};
+use crate::hardware::soc::cpu::core::control::forwarding_unit::{
+    ForwardA, ForwardB, ForwardingUnit,
+};
 use crate::hardware::soc::cpu::core::{PrivilegeMode, Trap};
 use crate::hardware::soc::types::OpStatus;
 

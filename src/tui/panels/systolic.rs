@@ -1,7 +1,7 @@
 use crate::tui::snapshot::Snapshot;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::Line,
     widgets::{Block, Borders, LineGauge, Paragraph}, // Gauge 대신 LineGauge 사용
@@ -53,7 +53,8 @@ pub fn draw(f: &mut Frame, area: Rect, snapshot: &Snapshot) {
                     .title("SRAM B (Weight)")
                     .borders(Borders::ALL),
             )
-            .style(Style::default().fg(Color::Magenta)),
+            .style(Style::default().fg(Color::Magenta))
+            .alignment(Alignment::Center),
         top_horizontal[1],
     );
 
@@ -74,6 +75,7 @@ pub fn draw(f: &mut Frame, area: Rect, snapshot: &Snapshot) {
                     .title("SRAM A (Input)")
                     .borders(Borders::ALL),
             )
+            .alignment(Alignment::Center)
             .style(Style::default().fg(Color::Cyan)),
         bottom_horizontal[0],
     );
@@ -90,6 +92,7 @@ pub fn draw(f: &mut Frame, area: Rect, snapshot: &Snapshot) {
                     .title("PE Array (16x16)")
                     .borders(Borders::ALL),
             )
+            .alignment(Alignment::Center)
             .style(Style::default().fg(Color::Yellow)),
         bottom_horizontal[1],
     );

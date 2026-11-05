@@ -116,8 +116,8 @@ pub fn compile_sbi(s_path: &str) -> Vec<u32> {
     assert!(objcopy_status.success(), "SBI 바이너리 추출 실패");
 
     let binary_bytes = fs::read(bin_path).expect("SBI 바이너리 읽기 실패");
-    // let _ = fs::remove_file(elf_path);
-    // let _ = fs::remove_file(bin_path);
+    let _ = fs::remove_file(elf_path);
+    let _ = fs::remove_file(bin_path);
 
     binary_bytes
         .as_chunks::<4>()

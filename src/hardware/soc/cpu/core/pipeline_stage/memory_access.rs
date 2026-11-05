@@ -2,7 +2,7 @@ use super::{ExMemRegister, MemWbRegister};
 
 use crate::hardware::soc::cpu::core::Core;
 use crate::hardware::soc::cpu::core::Trap;
-use crate::hardware::soc::cpu::core::mmu::{AccessType, Mmu};
+use crate::hardware::soc::cpu::core::components::mmu::{AccessType, Mmu};
 use crate::hardware::soc::system_bus::{BusOwner, SystemBus};
 use crate::hardware::soc::types::OpStatus;
 
@@ -14,7 +14,7 @@ pub fn execute(
     let control = ex_mem_reg.control;
     let vaddr = ex_mem_reg.alu_result; // ALU 결과를 가상 주소로 사용
 
-    // 3. 특수 제어: D-Cache 플러시 요청 처리
+    // 특수 제어: D-Cache 플러시 요청 처리
     if control.is_fence {
         match core.d_cache.handle_flush(bus, BusOwner::DCache) {
             OpStatus::Busy => return Ok(OpStatus::Busy),
@@ -58,7 +58,7 @@ pub fn execute(
         |addr| bus.read_paddr_u32_sync(addr),
     )?;
 
-    // 4. MMIO 라우팅 (캐시 우회 - CLINT, Systolic Array 등 버스에 등록된 모든 장치)
+    // 3. MMIO 라우팅 (캐시 우회 - CLINT, Systolic Array 등 버스에 등록된 모든 장치)
     // 가상 주소가 아닌 물리 주소를 사용하여 MMIO 접근
     if bus.is_mmio(paddr) {
         let mem_data = if control.mem_write {

@@ -1,9 +1,9 @@
 use crate::hardware::soc::cpu::core::Core;
-use crate::hardware::soc::cpu::core::mmu::Mmu;
+use crate::hardware::soc::cpu::core::components::mmu::Mmu;
 use crate::hardware::soc::system_bus::SystemBus;
 
 use crate::hardware::soc::cpu::core::Trap;
-use crate::hardware::soc::cpu::core::mmu::AccessType;
+use crate::hardware::soc::cpu::core::components::mmu::AccessType;
 use crate::hardware::soc::system_bus::BusOwner;
 use crate::hardware::soc::types::OpStatus;
 

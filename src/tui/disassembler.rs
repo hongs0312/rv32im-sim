@@ -1,4 +1,4 @@
-use crate::hardware::soc::cpu::core::decoder::Decoder;
+use crate::hardware::soc::cpu::core::components::decoder::Decoder;
 
 #[rustfmt::skip]
 pub fn disassemble(inst: u32) -> String {
