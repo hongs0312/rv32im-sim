@@ -1,10 +1,10 @@
 use crate::hardware::soc::cpu::core::Core;
 use crate::hardware::soc::cpu::core::components::mmu::Mmu;
-use crate::hardware::soc::system_bus::SystemBus;
+use crate::hardware::soc::on_chip_bus::SystemBus;
 
 use crate::hardware::soc::cpu::core::Trap;
 use crate::hardware::soc::cpu::core::components::mmu::AccessType;
-use crate::hardware::soc::system_bus::BusOwner;
+use crate::hardware::soc::on_chip_bus::BusOwner;
 use crate::hardware::soc::types::OpStatus;
 
 use super::IfIdRegister;
@@ -26,7 +26,7 @@ pub fn execute(
     let sstatus = core.csr.mstatus;
 
     let paddr = Mmu::translate(
-        core.pc,
+        cur_pc,
         AccessType::Instruction,
         core.privilege_mode,
         satp,
@@ -34,12 +34,13 @@ pub fn execute(
         |addr| bus.read_paddr_u32_sync(addr),
     )?;
 
-    // MMIO 접근 시 예외 발생
-    if bus.is_mmio(cur_pc) {
+    // 장치 영역 여부는 변환된 물리 주소로 판단한다.
+    if bus.is_mmio(paddr) {
         return Err(Trap {
             cause: 1,
+            // 예외 정보에는 원래의 명령어 가상 주소를 기록한다.
             tval: cur_pc,
-        }); // MMIO 접근 시 예외 발생
+        });
     }
 
     match core.i_cache.read(BusOwner::ICache, paddr, bus) {

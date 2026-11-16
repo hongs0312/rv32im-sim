@@ -1,6 +1,7 @@
 pub mod core;
+pub mod vector_processor;
 
-use crate::hardware::soc::system_bus::SystemBus;
+use crate::hardware::soc::on_chip_bus::SystemBus;
 
 pub struct Cpu {
     pub core0: core::Core,

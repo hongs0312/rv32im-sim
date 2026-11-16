@@ -6,6 +6,8 @@ pub mod syscon;
 pub mod uart;
 pub mod virtio_blk;
 
+pub mod clocked;
+
 use clint::{CLINT_BASE, CLINT_SIZE, Clint};
 use mmio_device::MmioDevice;
 use soc::SoC;

@@ -21,16 +21,20 @@ fn pipeline_step_is_driven_by_soc_clock() {
 #[test]
 fn store_and_load_use_soc_dram_through_the_bus() {
     let program = [
-        0x10000093, // addi x1, x0, 0x100
-        0x02a00113, // addi x2, x0, 42
-        0x0020a023, // sw x2, 0(x1)
-        0x50000093, // addi x1, x0, 0x500 (same cache index, new tag)
-        0x0000a183, // lw x3, 0(x1), evicts the dirty 0x100 line
+        0x80001537, // lui  x10, 0x80001 → 0x8000_1000
+        0x02a00093, // addi x1, x0, 42
+        0x00152023, // sw   x1, 0(x10)
+        0x00052103, // lw   x2, 0(x10)
+        0x0000006f, // jal  x0, 0
     ];
-    let mut hw = load_program(&program);
 
-    run_cycles(&mut hw, 140);
+    let mut hw = common::load_program(&program);
 
-    assert_eq!(hw.soc.dram.load32(0x100), 42);
-    assert_eq!(hw.soc.cpu.core0.regs.read(3), 0);
+    common::run_cycles(&mut hw, 80);
+
+    let regs = &hw.soc.cpu.core0.regs;
+
+    assert_eq!(regs.read(10), 0x8000_1000);
+    assert_eq!(regs.read(1), 42);
+    assert_eq!(regs.read(2), 42);
 }

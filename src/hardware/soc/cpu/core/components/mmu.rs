@@ -81,7 +81,6 @@ impl Mmu {
             }
 
             // R, W, X중 하나라도 1이면 리프(leaf) PTE에 도달한 것
-            // !!! 이 부분 이해 안됨...
             if r || w || x {
                 break; // 리프 PTE 발견
             }

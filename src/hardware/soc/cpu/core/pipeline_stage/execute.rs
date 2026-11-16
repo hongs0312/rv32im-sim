@@ -1,4 +1,8 @@
+use crate::hardware::clocked::Clocked;
 use crate::hardware::soc::cpu::core::Core;
+use crate::hardware::soc::cpu::core::components::alu::{
+    AluInputs, AluNextState, AluOperation, AluRequest,
+};
 use crate::hardware::soc::cpu::core::control;
 use crate::hardware::soc::cpu::core::control::forwarding_unit::{
     ForwardA, ForwardB, ForwardingUnit,
@@ -12,12 +16,31 @@ pub fn execute(
     core: &mut Core,
     id_ex_reg: IdExRegister,
     next_mem_wb_reg: &MemWbRegister,
+    alu_result_ready: bool,
+    next_alu_state: &mut Option<AluNextState>,
 ) -> Result<OpStatus<ExMemRegister>, Trap> {
     let (control, pc, rd, imm) = (id_ex_reg.control, id_ex_reg.pc, id_ex_reg.rd, id_ex_reg.imm);
     let (funct3, funct7) = (control.funct3, control.funct7);
 
     let rs1_data = core.regs.read(id_ex_reg.rs1);
     let rs2_data = core.regs.read(id_ex_reg.rs2);
+
+    // SYSTEM opcode에서 funct3=100은 예약된 형식이다.
+    // 부작용 없는 명령의 조기 반환보다 먼저 검사해야 한다.
+    if control.opcode == 0x73 && funct3 == 0b100 {
+        // SYSTEM의 I형식 필드로 원래 인코딩을 복원한다.
+        // imm_gen()이 SYSTEM의 imm[11:0]을 보존한다는 전제다.
+        let instruction = (((imm as u32) & 0xFFF) << 20)
+            | (((id_ex_reg.rs1 as u32) & 0x1F) << 15)
+            | ((funct3 as u32) << 12)
+            | (((rd as u32) & 0x1F) << 7)
+            | 0x73;
+
+        return Err(Trap {
+            cause: 2,
+            tval: instruction,
+        });
+    }
 
     // 무조건 점프(JAL) 중 rd=x0 인 경우 무시되는 것을 막기 위해 !control.jump 조건 추가
     if !control.reg_write
@@ -70,14 +93,39 @@ pub fn execute(
         false => rs2_data_forwarded,
     };
 
-    let alu_status = core
-        .alu
-        .execute_with_cycles(a, b, control.alu_op, funct3, funct7);
-
-    let (raw_alu_result, zero) = match alu_status {
-        OpStatus::Busy => return Ok(OpStatus::Busy),
-        OpStatus::Complete(res) => res,
+    let operation = if control.is_csr
+        || control.is_ecall
+        || control.is_mret
+        || control.is_sret
+        || control.is_fence
+        || control.is_fence_i
+    {
+        AluOperation::Add
+    } else {
+        AluOperation::decode(control.alu_op, funct3, funct7)
+            .map_err(|_| Trap { cause: 2, tval: 0 })?
     };
+    // 2. 현재 상태와 입력으로 출력 및 다음 상태를 계산한다.
+    let inputs = AluInputs {
+        request: Some(AluRequest { operation, a, b }),
+        result_ready: alu_result_ready,
+        flush: false,
+    };
+
+    let (outputs, next_state) = core.alu.evaluate(&inputs);
+
+    // 3. 다음 상태는 저장만 한다.
+    // 여기서 core.alu.commit()을 호출하지 않는다.
+    *next_alu_state = Some(next_state);
+
+    // 4. 결과가 없으면 EX는 아직 실행 중이다.
+    let result = match outputs.result {
+        Some(result) => result,
+        None => return Ok(OpStatus::Busy),
+    };
+
+    let raw_alu_result = result.value;
+    let zero = result.zero;
 
     let target_pc = match control.is_jalr {
         true => raw_alu_result & !1,

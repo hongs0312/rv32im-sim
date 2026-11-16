@@ -7,6 +7,7 @@ pub mod branch_controller;
 pub mod control_unit;
 pub mod forwarding_unit;
 pub mod hazard_detection_unit;
+pub(crate) mod pipeline_control;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ControlSignals {

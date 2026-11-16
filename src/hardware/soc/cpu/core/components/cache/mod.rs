@@ -4,7 +4,7 @@ mod stream_buffer;
 const CACHE_LINE_COUNT: usize = 64;
 
 use crate::hardware::soc::{
-    system_bus::{BusOwner, SystemBus},
+    on_chip_bus::{BusOwner, SystemBus},
     types::OpStatus,
 };
 use cache_line::CacheLine;
@@ -20,6 +20,13 @@ pub enum CacheState {
     FetchWait,
     FlushIssue { index: usize },
     FlushWait { index: usize },
+}
+
+pub struct CacheRequest {
+    pub addr: u32,
+    pub is_write: bool,
+    pub write_value: u32,
+    pub write_funct3: u8,
 }
 
 pub struct L1Cache {
@@ -101,37 +108,11 @@ impl L1Cache {
     }
 
     pub fn read(&mut self, owner: BusOwner, addr: u32, bus: &mut SystemBus) -> OpStatus<u32> {
-        // I Cache의 경우 프리페치 완료 수집
-        // if self.is_icache && self.stream_buffer.fetching {
-        //     if let OpStatus::Complete(data) = bus.collect_read(owner, self.stream_buffer.block_addr)
-        //     {
-        //         self.stream_buffer.data = data;
-        //         self.stream_buffer.valid = true;
-        //         self.stream_buffer.fetching = false;
-        //     }
-        // }
-
-        let block_addr = addr & !0xF; // 16바이트 블록 주소
-
         if self.state == CacheState::Idle {
             let offset = (addr & 0xF) as usize; // 16바이트 블록 내에서 4바이트 단위로 접근
             let index = ((addr >> 4) & 0x3F) as usize;
             let tag = addr >> 10;
             let line = &self.lines[index];
-
-            // if self.is_icache
-            //     && self.stream_buffer.valid
-            //     && self.stream_buffer.block_addr == block_addr
-            // {
-            //     self.lines[index].data = self.stream_buffer.data;
-            //     self.lines[index].valid = true;
-            //     self.lines[index].tag = tag;
-            //     self.lines[index].dirty = false;
-
-            //     self.stream_buffer.valid = false; // 스트림 버퍼의 데이터는 한 번만 사용
-
-            //     return OpStatus::Complete(self.lines[index].read32(offset));
-            // }
 
             if line.valid && line.tag == tag {
                 return OpStatus::Complete(line.read32(offset));
@@ -200,11 +181,15 @@ impl L1Cache {
             line.data = new_block;
             line.valid = true;
             line.tag = tag;
+            line.dirty = false;
 
             self.state = CacheState::Idle;
 
             if self.miss_addr == addr {
-                let offset = (addr & 0xC) as usize;
+                // 블록 내부의 바이트 위치를 그대로 보존한다.
+                // SB/SH의 주소 하위 비트를 여기서 제거하면 안 된다.
+                let offset = (addr & 0xF) as usize;
+
                 Self::write_to_line(line, offset, value, funct3);
                 OpStatus::Complete(0)
             } else {
@@ -238,17 +223,6 @@ impl L1Cache {
             CacheState::FetchIssue => {
                 if let OpStatus::Complete(()) = bus.issue_read(owner, self.miss_addr) {
                     self.state = CacheState::FetchWait;
-
-                    // I-Cache의 경우, 스트림 버퍼를 사용하여 다음 블록을 미리 가져옵니다.
-                    // if self.is_icache && !self.stream_buffer.fetching {
-                    //     let next_addr = self.miss_addr + 16;
-
-                    //     if let OpStatus::Complete(()) = bus.issue_read(owner, next_addr) {
-                    //         self.stream_buffer.fetching = true;
-                    //         self.stream_buffer.block_addr = next_addr;
-                    //         self.stream_buffer.valid = false;
-                    //     }
-                    // }
                 }
                 OpStatus::Busy
             }

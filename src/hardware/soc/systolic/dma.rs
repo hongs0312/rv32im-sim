@@ -5,7 +5,7 @@
 use super::scratchpad::Scratchpad;
 use super::{ARRAY_SIZE, INNER_DIM};
 
-use crate::hardware::soc::system_bus::{BusOwner, SystemBus};
+use crate::hardware::soc::on_chip_bus::{BusOwner, SystemBus};
 use crate::hardware::soc::types::OpStatus;
 
 #[derive(Clone, Copy, Default, PartialEq)]

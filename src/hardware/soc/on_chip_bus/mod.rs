@@ -58,11 +58,18 @@ impl<'a, 'b, 'c> SystemBus<'a, 'b, 'c> {
     where
         F: FnOnce(&mut Dram, u32) -> OpStatus<T>,
     {
+        // if addr < DRAM_BASE || addr >= DRAM_BASE + (RAM_SIZE as u32) {
+        //     panic!(
+        //         "\n[SystemBus Exception] DRAM 영역 이탈 (0x{:08X})!\n\
+        //          -> 스택 오버플로우 또는 C 코드 포인터 에러입니다.",
+        //         addr
+        //     );
+        // }
         if addr < DRAM_BASE || addr >= DRAM_BASE + (RAM_SIZE as u32) {
             panic!(
-                "\n[SystemBus Exception] DRAM 영역 이탈 (0x{:08X})!\n\
-                 -> 스택 오버플로우 또는 C 코드 포인터 에러입니다.",
-                addr
+                "[SystemBus] DRAM 범위 밖 접근: \
+                requester={:?}, previous_owner={:?}, addr={:#010x}",
+                owner, self.owner, addr,
             );
         }
 

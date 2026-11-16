@@ -1,13 +1,13 @@
 // src/hardware/soc/mod.rs
 pub mod cpu;
 pub mod memory;
-pub mod system_bus;
+pub mod on_chip_bus;
 pub mod systolic;
 pub mod types;
 
 use cpu::Cpu;
 use memory::{DRAM_BASE, Dram};
-use system_bus::{BusOwner, SystemBus};
+use on_chip_bus::{BusOwner, SystemBus};
 use systolic::{SYSTOLIC_BASE, SYSTOLIC_SIZE, SystolicArray};
 
 use crate::hardware::IrqLines;

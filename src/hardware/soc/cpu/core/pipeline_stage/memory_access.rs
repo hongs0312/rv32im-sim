@@ -3,7 +3,7 @@ use super::{ExMemRegister, MemWbRegister};
 use crate::hardware::soc::cpu::core::Core;
 use crate::hardware::soc::cpu::core::Trap;
 use crate::hardware::soc::cpu::core::components::mmu::{AccessType, Mmu};
-use crate::hardware::soc::system_bus::{BusOwner, SystemBus};
+use crate::hardware::soc::on_chip_bus::{BusOwner, SystemBus};
 use crate::hardware::soc::types::OpStatus;
 
 pub fn execute(
@@ -57,6 +57,20 @@ pub fn execute(
         sstatus,
         |addr| bus.read_paddr_u32_sync(addr),
     )?;
+
+    // if control.mem_write {
+    //     eprintln!(
+    //         "[STORE] pc={:#010x} vaddr={:#010x} paddr={:#010x} \
+    //         data={:#010x} funct3={:#x} cache_state={:?} miss_addr={:#010x}",
+    //         ex_mem_reg.pc,
+    //         vaddr,
+    //         paddr,
+    //         ex_mem_reg.rs2_data,
+    //         control.funct3,
+    //         core.d_cache.state,
+    //         core.d_cache.miss_addr,
+    //     );
+    // }
 
     // 3. MMIO 라우팅 (캐시 우회 - CLINT, Systolic Array 등 버스에 등록된 모든 장치)
     // 가상 주소가 아닌 물리 주소를 사용하여 MMIO 접근

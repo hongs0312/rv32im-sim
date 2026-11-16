@@ -82,22 +82,38 @@ impl ControlUnit {
                 control.wb_src = false; // PC + 4 선택!
             }
             0x73 => {
-                if funct3 != 0b000 {
-                    control.is_csr = true;
-                    control.csr_op = funct3 & 0b011;
-                    control.reg_write = true;
-                    control.wb_src = false;
-                } else {
-                    // 전달받은 funct7만으로 명령어 종류를 완벽하게 판별
-                    match funct7 {
-                        0x00 => control.is_ecall = true, // ecall (0x000)
-                        0x08 => control.is_sret = true,  // sret (0x102)
-                        0x09 => control.is_fence = true, // sfence.vma지만 캐시 플러시는 동일하게 처리
-                        0x18 => control.is_mret = true,  // mret (0x302)
-                        _ => {
-                            // 알 수 없는 SYSTEM 명령어
+                match funct3 {
+                    // 유효한 CSR 명령 형식
+                    // 레지스터: CSRRW / CSRRS / CSRRC
+                    // 즉시값:   CSRRWI / CSRRSI / CSRRCI
+                    0b001 | 0b010 | 0b011 | 0b101 | 0b110 | 0b111 => {
+                        control.is_csr = true;
+
+                        // 비트 2는 레지스터/즉시값 형식 구분에 사용한다.
+                        control.csr_op = funct3;
+
+                        control.reg_write = true;
+                        control.wb_src = false;
+                    }
+
+                    0b000 => {
+                        // 기존 SYSTEM 판별을 유지한다.
+                        // 전체 명령어 기반의 엄밀한 판별은 별도 수정 대상이다.
+                        match funct7 {
+                            0x00 => control.is_ecall = true,
+                            0x08 => control.is_sret = true,
+                            0x09 => control.is_fence = true,
+                            0x18 => control.is_mret = true,
+                            _ => {}
                         }
                     }
+
+                    0b100 => {
+                        // 예약된 형식.
+                        // EX 진입부에서 illegal-instruction 예외로 처리한다.
+                    }
+
+                    _ => unreachable!("funct3는 3비트 값이어야 합니다."),
                 }
             }
             0x0F => {
